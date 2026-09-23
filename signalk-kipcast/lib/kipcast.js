@@ -291,6 +291,7 @@ class KIPCast {
     this.sockets = new Set();
     this.displays = new Map();         // id -> { width, height, source, lastSeen }
     this.saveTimer = null;
+    this.stopping = false;             // no new Chromiums once stop() has begun
     this.loadDisplays();
   }
 
@@ -419,10 +420,17 @@ class KIPCast {
       userDataDir, // keeps this display's KIP settings/login between restarts
       args,
       defaultViewport: null,
+      // Puppeteer's own SIGTERM/SIGHUP handler closes Chromium but doesn't
+      // exit, and its mere presence stops Node exiting on the signal, so
+      // Signal K would hang until systemd kills it. The host owns signals.
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
     });
   }
 
   async getSession(id, width, height) {
+    if (this.stopping) throw new Error('KIPCast is stopping');
     if (this.sessions.has(id)) return this.sessions.get(id);
     if (this.sessionStarting.has(id)) return this.sessionStarting.get(id);
     const p = (async () => {
@@ -591,6 +599,7 @@ class KIPCast {
   }
 
   async stop() {
+    this.stopping = true;
     for (const s of this.sockets) s.destroy();
     if (this.wss) {
       // wss.close() leaves open connections alone, which would keep

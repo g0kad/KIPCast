@@ -46,9 +46,11 @@ To update later: `cd ~/KIPCast && git pull`, run `npm ci --omit=dev` in `signalk
 
 ### Try it without a display
 
-Open `http://<pi>:3050/?id=saloon` in any browser. The test viewer uses the same protocol as the ESP32, and mouse drags are sent as touches. It's also the easiest way to set up KIP for a display: anything you change here is what the `saloon` screen will show.
+Open `http://<pi>:3050/?id=saloon` in any browser. The test viewer uses the same protocol as the ESP32, and mouse drags are sent as touches. Click the screen to give it keyboard focus, and your typing and pastes go to KIP. That's how you fill in KIP's Signal K login. It's also the easiest way to set up KIP for a display: anything you change here is what the `saloon` screen will show.
 
-The first time, KIP shows its "Getting Started" guide. Dismiss it once in the viewer. KIP's settings are shared by every display, so this only needs doing once.
+The first time, KIP shows its "Getting Started" guide and may ask you to log in to Signal K. Do both once in the viewer. KIP's settings and login are shared by every display, so the ESP32 screens, which have no keyboard, pick them up automatically.
+
+The viewer has no password of its own. Anyone who can reach port 3050 can use KIP as the logged-in user, so only expose it on a network you trust.
 
 ### Plugin settings
 
@@ -111,6 +113,8 @@ This is the same for the ESP32 (TCP) and the browser viewer (WebSocket), so othe
 | `H <id> <width> <height>` | Hello. Must be the first line on TCP. The browser viewer passes the id as `/ws?id=` instead. |
 | `A` | Ready for the next frame. The Pi sends nothing new until it gets this, so a slow display never builds up a backlog. |
 | `T D <x> <y>` / `T M <x> <y>` / `T U <x> <y>` | Touch down / move / up, in display pixels. |
+| `I <text>` | Type text into the focused field. `<text>` is URL-encoded (`encodeURIComponent`). |
+| `K <key> [modifiers]` | Press a key: `Enter`, `Tab`, `Backspace`, `Escape`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, the arrow keys, or a letter/digit (for shortcuts such as Ctrl+A). Modifiers are a bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8. |
 | `P` | Keepalive. The ESP32 sends it after 10 s of silence. |
 
 **Pi → display**:

@@ -29,6 +29,7 @@
     display: block; width: 100%; aspect-ratio: 800 / 480; background: var(--glass);
     touch-action: none; cursor: crosshair; border-radius: 2px;
   }
+  canvas:focus { outline: 2px solid var(--ok); outline-offset: 3px; }
   .strip { display: flex; gap: 16px; align-items: center; margin-top: 14px; color: var(--dim); font-size: 13px; }
   .led { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
   .led.on { background: var(--ok); }
@@ -40,11 +41,12 @@
 <body>
 <main>
   <div class="unit">
-    <canvas id="screen" width="800" height="480" aria-label="Remote KIP dashboard"></canvas>
+    <canvas id="screen" width="800" height="480" tabindex="0" aria-label="Remote KIP dashboard. Click, then type to send keys."></canvas>
     <div class="strip">
       <span class="led" id="led"></span>
       <span id="state">Connecting…</span>
       <span id="fps"></span>
+      <span id="kbd">Click the screen to type</span>
       <label>Display id <input id="dispId" spellcheck="false"></label>
     </div>
   </div>
@@ -103,6 +105,7 @@
   let down = false, lastMove = 0;
 
   canvas.addEventListener('pointerdown', (e) => {
+    canvas.focus();
     canvas.setPointerCapture(e.pointerId);
     down = true;
     const [x, y] = toPx(e);
@@ -122,6 +125,36 @@
   };
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
+
+  // Keyboard → KIP. Printable characters are sent as text (I), everything
+  // else as named keys (K). Only while the screen has focus.
+  const kbd = document.getElementById('kbd');
+  canvas.addEventListener('focus', () => { kbd.textContent = 'Keyboard: sending to KIP'; });
+  canvas.addEventListener('blur', () => { kbd.textContent = 'Click the screen to type'; });
+  const NAMED = new Set(['Enter', 'Tab', 'Backspace', 'Escape', 'Delete', 'Home', 'End',
+    'PageUp', 'PageDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']);
+  canvas.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
+    const mods = (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
+    if (e.ctrlKey || e.metaKey) {
+      // Leave Ctrl+V to the browser so the paste event below fires.
+      if (e.key.toLowerCase() === 'v' || !/^[a-z0-9]$/i.test(e.key)) return;
+      send(`K ${e.key.toLowerCase()} ${mods}`);
+    } else if (e.key.length === 1) {
+      send(`I ${encodeURIComponent(e.key)}`);
+    } else if (NAMED.has(e.key)) {
+      send(`K ${e.key} ${mods}`);
+    } else {
+      return;
+    }
+    e.preventDefault();
+  });
+  document.addEventListener('paste', (e) => {
+    if (document.activeElement !== canvas) return;
+    const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
+    if (t) send(`I ${encodeURIComponent(t.replace(/[\r\n]+/g, ' '))}`);
+    e.preventDefault();
+  });
 
   connect();
 })();

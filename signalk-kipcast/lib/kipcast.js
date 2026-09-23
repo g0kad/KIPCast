@@ -16,6 +16,10 @@
  *   H <id> <width> <height>   hello (TCP only; WS uses ?id=)
  *   A                         ready for next frame (flow control)
  *   T <D|M|U> <x> <y>         touch down / move / up, in display pixels
+ *   I <text>                  type text; <text> is encodeURIComponent()-encoded
+ *   K <key> [modifiers]       press one key, e.g. Enter, Backspace, Tab, ArrowLeft,
+ *                             or a single character with modifiers (Ctrl+A).
+ *                             modifiers: CDP bitmask, Alt=1 Ctrl=2 Meta=4 Shift=8
  *   P                         keepalive, ignored
  *
  * Downstream (TCP): 'K' 'C' 'F' + uint32 big-endian length + JPEG bytes.
@@ -200,10 +204,28 @@ class Session {
   }
 
   // Queue input so events always reach Chromium in order.
-  input(kind, x, y) {
+  queue(fn) {
     this.inputChain = this.inputChain
-      .then(() => this.dispatch(kind, x, y))
+      .then(() => (this.cdp ? fn(this.cdp) : undefined))
       .catch((e) => this.cast.log(`[${this.id}] input error: ${e.message}`));
+  }
+
+  input(kind, x, y) { this.queue(() => this.dispatch(kind, x, y)); }
+
+  // Typed text goes in as an IME-style insert: fires the input events that
+  // Angular forms (KIP's login) listen for, and copes with any character.
+  text(str) { this.queue((cdp) => cdp.send('Input.insertText', { text: str })); }
+
+  key(name, modifiers) {
+    const k = keyInfo(name);
+    if (!k) return;
+    this.queue(async (cdp) => {
+      const base = { key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers };
+      // Enter needs text on keyDown to submit forms; other keys are rawKeyDown.
+      if (k.text && !(modifiers & 7)) await cdp.send('Input.dispatchKeyEvent', { ...base, type: 'keyDown', text: k.text });
+      else await cdp.send('Input.dispatchKeyEvent', { ...base, type: 'rawKeyDown' });
+      await cdp.send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+    });
   }
 
   async dispatch(kind, x, y) {
@@ -325,6 +347,17 @@ class KIPCast {
         break;
       }
       case 'A': client.ack(); break;
+      case 'I': {
+        if (!client.session || !parts[1]) break;
+        let str;
+        try { str = decodeURIComponent(parts[1]); } catch { break; }
+        client.session.text(str.slice(0, 1000));
+        break;
+      }
+      case 'K': {
+        if (client.session) client.session.key(parts[1], (+parts[2] || 0) & 15);
+        break;
+      }
       case 'T': {
         if (!client.session) break;
         const kind = parts[1];
@@ -427,6 +460,23 @@ class KIPCast {
     this.browser = null;
     this.sessions.clear();
   }
+}
+
+const NAMED_KEYS = {
+  Enter: [13, 'Enter', '\r'], Tab: [9, 'Tab'], Backspace: [8, 'Backspace'], Escape: [27, 'Escape'],
+  Delete: [46, 'Delete'], Home: [36, 'Home'], End: [35, 'End'], PageUp: [33, 'PageUp'], PageDown: [34, 'PageDown'],
+  ArrowLeft: [37, 'ArrowLeft'], ArrowUp: [38, 'ArrowUp'], ArrowRight: [39, 'ArrowRight'], ArrowDown: [40, 'ArrowDown'],
+};
+
+// CDP key event fields for a named key or a single ASCII letter/digit.
+function keyInfo(name) {
+  if (NAMED_KEYS[name]) {
+    const [vk, code, text] = NAMED_KEYS[name];
+    return { key: name, code, vk, text };
+  }
+  if (/^[A-Za-z]$/.test(name)) return { key: name, code: `Key${name.toUpperCase()}`, vk: name.toUpperCase().charCodeAt(0) };
+  if (/^[0-9]$/.test(name)) return { key: name, code: `Digit${name}`, vk: name.charCodeAt(0) };
+  return null;
 }
 
 function sanitiseId(id) {

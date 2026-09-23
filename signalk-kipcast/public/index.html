@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIPCast displays</title>
+<style>
+  :root {
+    --chart-table: #1c2733;
+    --housing: #0e1216;
+    --line: #2d3640;
+    --ink: #d7dee6;
+    --dim: #7d8a97;
+    --ok: #5fc48a;
+    --warn: #e0a53b;
+    --bad: #e06c5f;
+    --accent: #6fb3e0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--chart-table); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { width: min(100% - 32px, 860px); margin: 32px auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  p.lede { margin: 0 0 24px; color: var(--dim); }
+  .panel {
+    background: var(--housing); border-radius: 12px; padding: 20px;
+    box-shadow: inset 0 1px 0 #2a323b, 0 12px 30px rgb(0 0 0 / .35); margin-bottom: 20px;
+  }
+  .row {
+    display: grid; grid-template-columns: minmax(0, 1.4fr) 110px minmax(0, 1.6fr) auto;
+    gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line);
+  }
+  .row:first-of-type { border-top: 0; }
+  .row.head { color: var(--dim); font-size: 13px; padding-top: 0; }
+  .id { font-weight: 600; overflow-wrap: anywhere; }
+  .size { font-variant-numeric: tabular-nums; }
+  .status { display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 14px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.on { background: var(--ok); }
+  .dot.viewer { background: var(--accent); }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  a.btn, button {
+    font: inherit; font-size: 14px; border-radius: 6px; padding: 5px 12px; cursor: pointer;
+    border: 1px solid var(--line); background: #1a2027; color: var(--ink); text-decoration: none;
+  }
+  a.btn.primary, button.primary { background: #24506f; border-color: #2f6a92; }
+  a.btn:hover, button:hover { border-color: var(--dim); }
+  button:disabled { opacity: .45; cursor: default; }
+  a.btn:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .empty { color: var(--dim); padding: 8px 0; }
+  form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--dim); }
+  input, select {
+    font: inherit; font-size: 14px; background: #1a2027; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+  }
+  input[name=id] { width: 11em; }
+  input[type=number] { width: 6em; }
+  .custom[hidden] { display: none; }
+  .msg { min-height: 1.5em; margin-top: 10px; font-size: 14px; color: var(--bad); }
+  .note { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
+  code { background: #1a2027; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+
+  @media (max-width: 620px) {
+    .row { grid-template-columns: 1fr auto; row-gap: 4px; }
+    .row.head { display: none; }
+    .size { justify-self: end; }
+    .actions { grid-column: 1 / -1; justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>KIPCast displays</h1>
+  <p class="lede">Each display has its own KIP, drawn at its own size, with its own login and dashboards.
+    Open one to set it up in the browser viewer.</p>
+
+  <section class="panel" aria-labelledby="known">
+    <h2 id="known">Displays</h2>
+    <div id="list" aria-live="polite"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section class="panel" aria-labelledby="add">
+    <h2 id="add">Add a display</h2>
+    <form id="addForm">
+      <label>Display id
+        <input name="id" required pattern="[A-Za-z0-9_\-]{1,32}" spellcheck="false" placeholder="helm">
+      </label>
+      <label>Screen
+        <select name="preset">
+          <option value="800x480">Waveshare 7" (800×480)</option>
+          <option value="480x480">Waveshare 4" (480×480)</option>
+          <option value="custom">Custom size</option>
+        </select>
+      </label>
+      <span class="custom" hidden>
+        <label>Width <input type="number" name="width" min="64" max="4096" value="800"></label>
+      </span>
+      <span class="custom" hidden>
+        <label>Height <input type="number" name="height" min="64" max="4096" value="480"></label>
+      </span>
+      <button class="primary" type="submit">Add</button>
+    </form>
+    <div class="msg" id="msg" role="status"></div>
+    <p class="note">Use the same id as <code>DISPLAY_ID</code> in the screen's firmware. You only need to add a
+      display here to set up its dashboards before the screen has connected; screens add themselves.</p>
+  </section>
+</main>
+<script>
+(() => {
+  const API = '/plugins/signalk-kipcast/displays';
+  const list = document.getElementById('list');
+  const form = document.getElementById('addForm');
+  const msg = document.getElementById('msg');
+  let viewerPort = 3050;
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function ago(iso) {
+    if (!iso) return '';
+    const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+    return `${Math.round(s / 86400)} days ago`;
+  }
+
+  function status(d) {
+    if (d.screens) return `<span class="dot on"></span>Screen connected${d.viewers ? ' · viewer open' : ''}`;
+    if (d.viewers) return '<span class="dot viewer"></span>Open in viewer';
+    if (d.source === 'manual' && !d.lastSeen) return '<span class="dot"></span>Added, not yet connected';
+    const seen = d.source === 'screen' ? `Screen last seen ${ago(d.lastSeen)}` : `Added ${ago(d.lastSeen)}`;
+    return `<span class="dot"></span>${seen}`;
+  }
+
+  function render(displays) {
+    if (!displays.length) {
+      list.innerHTML = '<div class="empty">No displays yet. Screens appear here when they first connect, or add one below.</div>';
+      return;
+    }
+    const viewer = `${location.protocol}//${location.hostname}:${viewerPort}/`;
+    list.innerHTML = '<div class="row head"><span>Display</span><span>Size</span><span>Status</span><span></span></div>' +
+      displays.map((d) => `
+        <div class="row">
+          <span class="id">${esc(d.id)}</span>
+          <span class="size">${d.width}×${d.height}</span>
+          <span class="status">${status(d)}</span>
+          <span class="actions">
+            <a class="btn primary" href="${viewer}?id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener">Open</a>
+            <button type="button" data-forget="${esc(d.id)}" ${d.screens ? 'disabled title="Connected screens can’t be forgotten"' : ''}>Forget</button>
+          </span>
+        </div>`).join('');
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch(API, { credentials: 'include' });
+      if (r.status === 401 || r.status === 403) {
+        list.innerHTML = '<div class="empty">Log in to Signal K to manage displays.</div>';
+        return;
+      }
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      const data = await r.json();
+      viewerPort = data.viewerPort;
+      render(data.displays);
+    } catch (e) {
+      list.innerHTML = `<div class="empty">Couldn’t load displays: ${esc(e.message)}. Is the KIPCast plugin enabled?</div>`;
+    }
+  }
+
+  list.addEventListener('click', async (e) => {
+    const id = e.target.dataset && e.target.dataset.forget;
+    if (!id) return;
+    if (!confirm(`Forget “${id}”? Its remembered size is removed. Its KIP login and dashboards are kept, and a screen with this id adds itself again when it connects.`)) return;
+    await fetch(`${API}/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
+    refresh();
+  });
+
+  const preset = form.elements.preset;
+  preset.addEventListener('change', () => {
+    const custom = preset.value === 'custom';
+    form.querySelectorAll('.custom').forEach((el) => { el.hidden = !custom; });
+    if (!custom) {
+      const [w, h] = preset.value.split('x');
+      form.elements.width.value = w;
+      form.elements.height.value = h;
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.textContent = '';
+    const body = { id: form.elements.id.value.trim(), width: +form.elements.width.value, height: +form.elements.height.value };
+    if (preset.value !== 'custom') [body.width, body.height] = preset.value.split('x').map(Number);
+    const r = await fetch(API, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      msg.textContent = (await r.json().catch(() => ({}))).error || `Couldn’t add display (${r.status})`;
+      return;
+    }
+    form.elements.id.value = '';
+    refresh();
+  });
+
+  refresh();
+  setInterval(refresh, 5000);
+})();
+</script>
+</body>
+</html>

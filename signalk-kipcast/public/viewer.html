@@ -47,7 +47,8 @@
       <span id="state">Connecting…</span>
       <span id="fps"></span>
       <span id="kbd">Click the screen to type</span>
-      <label>Display id <input id="dispId" spellcheck="false"></label>
+      <label>Display id <input id="dispId" spellcheck="false" list="knownIds"></label>
+      <datalist id="knownIds"></datalist>
     </div>
   </div>
 </main>
@@ -62,6 +63,17 @@
 
   const params = new URLSearchParams(location.search);
   idInput.value = params.get('id') || 'viewer';
+
+  // Offer the displays the Pi knows about, with their sizes.
+  fetch('/displays').then((r) => r.json()).then((list) => {
+    const dl = document.getElementById('knownIds');
+    for (const d of list) {
+      const o = document.createElement('option');
+      o.value = d.id;
+      o.label = `${d.width}×${d.height}`;
+      dl.appendChild(o);
+    }
+  }).catch(() => {});
   idInput.addEventListener('change', () => {
     params.set('id', idInput.value);
     location.search = params.toString();
@@ -72,9 +84,12 @@
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/ws?id=${encodeURIComponent(idInput.value)}`);
+    // ?w=&h= on the page URL opens a new display id at that size, e.g. 480x480.
+    const size = params.get('w') && params.get('h') ? `&w=${+params.get('w')}&h=${+params.get('h')}` : '';
+    ws = new WebSocket(`${proto}://${location.host}/ws?id=${encodeURIComponent(idInput.value)}${size}`);
     ws.binaryType = 'blob';
     ws.onopen = () => { led.classList.add('on'); state.textContent = `Connected as “${idInput.value}”`; };
+    canvas.dataset.sized = '';
     ws.onclose = () => {
       led.classList.remove('on');
       state.textContent = 'Disconnected. Retrying in 2 s';
@@ -84,6 +99,16 @@
       if (!(ev.data instanceof Blob)) return;
       try {
         const bmp = await createImageBitmap(ev.data);
+        // Match the display's size, which may not be 800x480.
+        if (bmp.width !== canvas.width || bmp.height !== canvas.height) {
+          canvas.width = bmp.width;
+          canvas.height = bmp.height;
+          canvas.style.aspectRatio = `${bmp.width} / ${bmp.height}`;
+        }
+        if (!canvas.dataset.sized) {
+          canvas.dataset.sized = '1';
+          state.textContent = `Connected as “${idInput.value}” · ${bmp.width}×${bmp.height}`;
+        }
         ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
         bmp.close();
         frames++;

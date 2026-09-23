@@ -5,6 +5,7 @@
   "main": "index.js",
   "keywords": [
     "signalk-node-server-plugin",
+    "signalk-webapp",
     "signalk-category-instruments",
     "kip",
     "esp32"
@@ -20,5 +21,8 @@
   "dependencies": {
     "puppeteer-core": "^25.11.0",
     "ws": "^8.18.0"
+  },
+  "signalk": {
+    "displayName": "KIPCast"
   }
 }

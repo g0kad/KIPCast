@@ -79,10 +79,8 @@ Hardware: [Waveshare ESP32-S3-Touch-LCD-7](https://www.waveshare.com/wiki/ESP32-
    cd kipcast-display/include
    cp secrets.example.h secrets.h          # secrets.h is ignored by git
    ```
-   Edit `secrets.h` and fill in your SSID and password.
-3. In [`include/config.h`](kipcast-display/include/config.h), set:
-   - `KIPCAST_HOST`: the Pi's address. An IP address is the most reliable; a `.local` name is looked up over mDNS.
-   - `DISPLAY_ID`: a different id for each screen.
+   Edit `secrets.h` and fill in your SSID, password and `DISPLAY_ID` (a different id for each screen).
+3. In [`include/config.h`](kipcast-display/include/config.h), set `KIPCAST_HOST` to the Pi's address. An IP address is the most reliable; a `.local` name is looked up over mDNS.
 4. Build and flash over the USB-C port marked **USB** (the ESP32's native USB):
    ```bash
    cd kipcast-display

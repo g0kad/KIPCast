@@ -15,8 +15,11 @@
 #define KIPCAST_PORT   3051
 
 // Each physical screen gets its own id -> its own KIP tab on the Pi,
-// so swiping on one screen doesn't change the others.
-#define DISPLAY_ID     "shedtest"
+// so swiping on one screen doesn't change the others. Set it per screen in
+// secrets.h; this is only the fallback.
+#ifndef DISPLAY_ID
+  #define DISPLAY_ID   "saloon"
+#endif
 
 // ---- Panel ----
 #define SCREEN_W       800

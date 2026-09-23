@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Cast live KIP dashboards to low-cost ESP32 touchscreens, with touch passed back to KIP",
   "main": "index.js",
+  "files": [
+    "index.js",
+    "standalone.js",
+    "lib/",
+    "public/",
+    "test/",
+    "CHANGELOG.md"
+  ],
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-webapp",
@@ -11,9 +19,19 @@
     "esp32"
   ],
   "scripts": {
-    "start": "node standalone.js"
+    "start": "node standalone.js",
+    "test": "node --test test/*.test.js"
   },
-  "author": "Mike",
+  "author": "Mike G0KAD",
+  "homepage": "https://github.com/g0kad/KIPCast#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/g0kad/KIPCast.git",
+    "directory": "signalk-kipcast"
+  },
+  "bugs": {
+    "url": "https://github.com/g0kad/KIPCast/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=22.12"

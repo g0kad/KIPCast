@@ -113,7 +113,7 @@ The viewer has no password of its own. Anyone who can reach port 3050 can use KI
 | Display TCP port | 3051 | Port the ESP32 connects to. |
 | Browser viewer port | 3050 | Port for the test viewer. |
 | Input mode | `touch` | Switch to `mouse` if a page ignores touch events. |
-| Chromium path | auto | Checks `/usr/bin/chromium`, `chromium-browser` and `google-chrome`. |
+| Chromium path | auto | Checks `/usr/bin/chromium`, `chromium-browser` and `google-chrome`. If Chromium can't be found, the plugin still starts and says so in its status; displays can't connect until it's installed. |
 
 A display's Chromium is shut down 5 minutes after its last screen disconnects, and starts again when a screen connects.
 
@@ -211,3 +211,12 @@ The ports are fixed at 3050 and 3051 in this mode, so stop the plugin first.
 ## Licence
 
 MIT. `kipcast-display/include/esp_panel_board_custom_conf.h` is Apache-2.0 (Espressif Systems / Waveshare).
+
+### Tests
+
+```bash
+cd signalk-kipcast
+npm test
+```
+
+They use Node's built-in test runner and a stand-in for Chromium, so they need neither a browser nor a network, and run on Windows or macOS as well as the Pi. The test that uses a real TCP socket is skipped when `SIGNALK_REGISTRY_TEST` is set, as it is when the Signal K App Store tests plugins.

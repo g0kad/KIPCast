@@ -514,7 +514,17 @@ class KIPCast {
       viewers += kinds.filter((k) => k === 'viewer').length;
     }
     const v = viewers ? ` (${viewers} viewer${viewers > 1 ? 's' : ''})` : '';
-    this.status(screens.length ? `Connected: ${screens.sort().join(', ')}${v}` : `No displays connected${v}`);
+    const msg = screens.length ? `Connected: ${screens.sort().join(', ')}${v}` : `No displays connected${v}`;
+    const missing = this.chromiumMissing();
+    this.status(missing ? `${missing} ${msg}` : msg);
+  }
+
+  // Why Chromium can't be launched, or null if it can. Checked afresh each
+  // time, so installing it while Signal K runs clears the warning.
+  chromiumMissing() {
+    const p = this.opts.chromiumPath;
+    if (p) return fs.existsSync(p) ? null : `Chromium not found at ${p}.`;
+    try { findChromium(); return null; } catch (e) { return e.message; }
   }
 
   startTcp() {
@@ -591,8 +601,11 @@ class KIPCast {
     this.httpServer.listen(this.opts.httpPort, () => this.log(`browser viewer: http://<pi>:${this.opts.httpPort}/`));
   }
 
+  // A missing Chromium only shows in the status: it isn't needed until a
+  // display connects, and the plugin should still start and say why.
   async start() {
-    if (!this.opts.chromiumPath) findChromium(); // fail early if Chromium is missing
+    const missing = this.chromiumMissing();
+    if (missing) this.log(missing);
     this.startTcp();
     this.startHttp();
     this.updateStatus();
@@ -626,7 +639,7 @@ const NAMED_KEYS = {
 
 // CDP key event fields for a named key or a single ASCII letter/digit.
 function keyInfo(name) {
-  if (NAMED_KEYS[name]) {
+  if (Object.hasOwn(NAMED_KEYS, name)) {
     const [vk, code, text] = NAMED_KEYS[name];
     return { key: name, code, vk, text };
   }
@@ -645,4 +658,4 @@ function sanitiseId(id) {
   return String(id || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'default';
 }
 
-module.exports = { KIPCast, DEFAULTS };
+module.exports = { KIPCast, DEFAULTS, Client, sanitiseId, validSize, keyInfo };

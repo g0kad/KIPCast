@@ -22,8 +22,11 @@
 #endif
 
 // ---- Panel ----
-#define SCREEN_W       800
-#define SCREEN_H       480
+// Set per board in platformio.ini; these are the 7" defaults.
+#ifndef SCREEN_W
+  #define SCREEN_W     800
+  #define SCREEN_H     480
+#endif
 
 // Largest JPEG we'll accept. 800x480 at quality 70 is typically 40-90 KB.
 #define MAX_JPEG_BYTES (256 * 1024)

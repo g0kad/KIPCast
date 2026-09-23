@@ -1,12 +1,13 @@
 /*
- * KIPCast display firmware for the Waveshare ESP32-S3-Touch-LCD-7 (800x480)
+ * KIPCast display firmware for Waveshare ESP32-S3 touch LCDs:
+ * ESP32-S3-Touch-LCD-7 (800x480) and ESP32-S3-Touch-LCD-4 Rev4 (480x480)
  *
  * - Connects to the KIPCast server on the Pi over TCP
  * - Receives JPEG frames, decodes them straight onto the RGB panel
  * - Sends touch down/move/up back, which the Pi injects into KIP
  *
- * Build: PlatformIO (see platformio.ini). Panel config lives in
- * include/esp_panel_board_custom_conf.h, copied from Waveshare's demo.
+ * Build: PlatformIO (see platformio.ini), one env per board. Panel configs
+ * live in include/boards/<board>/esp_panel_board_custom_conf.h.
  */
 #include <Arduino.h>
 #include <WiFi.h>
@@ -47,7 +48,70 @@ static void fillScreen(uint16_t rgb565) {
 static const uint16_t COL_WIFI   = 0x0010;  // dark blue: joining WiFi
 static const uint16_t COL_SERVER = 0x4200;  // dark amber: looking for KIPCast
 
+#ifdef KIPCAST_BOARD_LCD4
+/*
+ * The 4" Rev4 gates panel power and the LCD/touch resets through a CH32V003
+ * IO expander (I2C 0x24), which ESP32_Display_Panel doesn't support. Do the
+ * same writes as Waveshare's WS_CH32_IO::begin() before the board starts.
+ * Bit-banged so no I2C driver owns these pins when the touch driver (same
+ * bus) claims them.
+ */
+static const int CH32_SDA = 15, CH32_SCL = 7;
+static const uint8_t CH32_ADDR = 0x24, CH32_REG_DIR = 0x02, CH32_REG_OUT = 0x03;
+static const uint8_t CH32_TP_RST = 1 << 1, CH32_LCD_RST = 1 << 3, CH32_SYS_EN = 1 << 5;
+
+// Open-drain: drive low, or release and let the pull-ups take the line high.
+static void i2cLine(int pin, bool high) {
+  if (high) pinMode(pin, INPUT_PULLUP);
+  else { pinMode(pin, OUTPUT); digitalWrite(pin, LOW); }
+  delayMicroseconds(5);
+}
+
+static bool i2cByte(uint8_t b) {
+  for (int i = 7; i >= 0; i--) {
+    i2cLine(CH32_SDA, b & (1 << i));
+    i2cLine(CH32_SCL, true);
+    i2cLine(CH32_SCL, false);
+  }
+  i2cLine(CH32_SDA, true);  // release for ACK
+  i2cLine(CH32_SCL, true);
+  bool ack = digitalRead(CH32_SDA) == LOW;
+  i2cLine(CH32_SCL, false);
+  return ack;
+}
+
+static bool ch32Write(uint8_t reg, uint8_t val) {
+  i2cLine(CH32_SDA, false);  // start
+  i2cLine(CH32_SCL, false);
+  bool ok = i2cByte(CH32_ADDR << 1) && i2cByte(reg) && i2cByte(val);
+  i2cLine(CH32_SDA, false);  // stop
+  i2cLine(CH32_SCL, true);
+  i2cLine(CH32_SDA, true);
+  return ok;
+}
+
+static void ch32PowerOn() {
+  i2cLine(CH32_SDA, true);
+  i2cLine(CH32_SCL, true);
+  // Clock out any half-finished transfer left from before a reset.
+  for (int i = 0; i < 9 && digitalRead(CH32_SDA) == LOW; i++) {
+    i2cLine(CH32_SCL, false);
+    i2cLine(CH32_SCL, true);
+  }
+  bool ok = ch32Write(CH32_REG_DIR, 0xFF) && ch32Write(CH32_REG_OUT, 0);  // resets asserted, power off
+  delay(200);
+  ok = ok && ch32Write(CH32_REG_OUT, CH32_SYS_EN | CH32_LCD_RST | CH32_TP_RST);
+  delay(200);
+  pinMode(CH32_SDA, INPUT);
+  pinMode(CH32_SCL, INPUT);
+  Serial.println(ok ? "CH32 IO expander: panel powered" : "CH32 IO expander: no ACK at 0x24");
+}
+#endif
+
 static void initDisplay() {
+#ifdef KIPCAST_BOARD_LCD4
+  ch32PowerOn();
+#endif
   board = new Board();
   if (!board->init()) { Serial.println("board init failed"); while (true) delay(1000); }
   lcd = board->getLCD();

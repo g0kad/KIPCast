@@ -1,8 +1,13 @@
 #pragma once
 
 // ---- WiFi ----
-#define WIFI_SSID      "your-ssid"
-#define WIFI_PASS      "your-password"
+// Credentials live in secrets.h, which git ignores. Copy secrets.example.h
+// to secrets.h and fill it in.
+#if __has_include("secrets.h")
+  #include "secrets.h"
+#else
+  #error "include/secrets.h missing: copy include/secrets.example.h to include/secrets.h and set your WiFi details"
+#endif
 
 // ---- KIPCast server (the Pi) ----
 // An IP address is most reliable. A name ending in ".local" is resolved via mDNS.

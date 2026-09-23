@@ -7,3 +7,6 @@ node_modules/
 
 # Chromium profile created by standalone.js
 signalk-kipcast/chrome-profile/
+
+# Firmware WiFi credentials
+kipcast-display/include/secrets.h

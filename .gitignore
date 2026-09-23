@@ -1,0 +1,9 @@
+# PlatformIO
+.pio/
+.vscode/
+
+# Node
+node_modules/
+
+# Chromium profile created by standalone.js
+signalk-kipcast/chrome-profile/

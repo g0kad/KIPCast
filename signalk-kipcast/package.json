@@ -1,0 +1,24 @@
+{
+  "name": "signalk-kipcast",
+  "version": "0.1.0",
+  "description": "Cast live KIP dashboards to low-cost ESP32 touchscreens, with touch passed back to KIP",
+  "main": "index.js",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-instruments",
+    "kip",
+    "esp32"
+  ],
+  "scripts": {
+    "start": "node standalone.js"
+  },
+  "author": "Mike",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.11.0",
+    "ws": "^8.18.0"
+  }
+}

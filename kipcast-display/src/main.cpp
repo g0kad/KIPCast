@@ -54,11 +54,12 @@ static void initDisplay() {
   // Bounce buffer keeps the RGB panel stable while WiFi hammers PSRAM.
   auto *bus = lcd->getBus();
   if (bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB) {
-    static_cast<BusRGB *>(bus)->configRGB_BounceBufferSize(lcd->getFrameWidth() * 10);
+    static_cast<BusRGB *>(bus)->configRGB_BounceBufferSize(lcd->getFrameWidth() * 20);
   }
   if (!board->begin()) { Serial.println("board begin failed"); while (true) delay(1000); }
   touch = board->getTouch();
   if (!touch) Serial.println("no touch controller: view-only mode");
+  Serial.println("display ready");
 }
 
 /* ------------------------------------------------------------------ */
@@ -72,7 +73,10 @@ static void ensureWifi() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // power save adds big latency to every frame
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) delay(250);
+  for (int i = 1; WiFi.status() != WL_CONNECTED; i++) {
+    delay(250);
+    if (i % 20 == 0) Serial.printf("WiFi: still joining (status %d)\n", WiFi.status());
+  }
   Serial.printf("WiFi: %s\n", WiFi.localIP().toString().c_str());
   MDNS.begin("kipcast-" DISPLAY_ID);
 }
@@ -208,6 +212,9 @@ static void pollTouch() {
 
 void setup() {
   Serial.begin(115200);
+  // Give the PC a moment to reopen the USB serial port after a reset, or the
+  // startup messages are lost.
+  while (!Serial && millis() < 3000) delay(10);
   delay(200);
   Serial.println("KIPCast display starting");
   jpegBuf = (uint8_t *)heap_caps_malloc(MAX_JPEG_BYTES, MALLOC_CAP_SPIRAM);

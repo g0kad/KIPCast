@@ -2,11 +2,17 @@
 
 Put live [KIP](https://github.com/mxtommy/Kip) dashboards on low-cost ESP32 touchscreens around the boat.
 
+<p>
+  <img src="https://raw.githubusercontent.com/g0kad/KIPCast/main/signalk-kipcast/images/windsteer.jpeg" alt="KIP wind steering gauge on a 4-inch KIPCast screen" width="260">
+  <img src="https://raw.githubusercontent.com/g0kad/KIPCast/main/signalk-kipcast/images/battery.jpeg" alt="House battery current, voltage and state of charge" width="260">
+  <img src="https://raw.githubusercontent.com/g0kad/KIPCast/main/signalk-kipcast/images/switches.jpeg" alt="Digital switches for the plotter, AIS and VHF" width="260">
+</p>
+
 This Signal K plugin runs KIP in headless Chromium on the server and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" (800×480) and the 4" (480×480). Touches on the screen are sent back to KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
 
 Each display has its own id, and each id gets its own KIP, drawn at that screen's size with its own login and dashboards.
 
-The screens need the KIPCast display firmware. It can be installed from a web browser, and the full instructions are in the [KIPCast repository](https://github.com/g0kad/KIPCast#readme).
+The screens need the KIPCast display firmware, which you can install from Chrome or Edge with the [web installer](https://g0kad.github.io/KIPCast/). The full instructions are in the [KIPCast repository](https://github.com/g0kad/KIPCast#readme).
 
 ## Requirements
 
@@ -19,7 +25,7 @@ Each connected display has its own Chromium, which uses about 370 MB on a Pi 5. 
 ## Setting up
 
 1. Install **KIPCast** from the Signal K App Store, then enable it in **Server → Plugin Config → KIPCast**.
-2. Flash a screen with the KIPCast firmware and give it your WiFi details and a display id. It finds the Signal K server by itself.
+2. Install the firmware on a screen with the [web installer](https://g0kad.github.io/KIPCast/), then give it your WiFi details and a display id on its setup page. It finds the Signal K server by itself.
 3. Open **Webapps → KIPCast**. The screen appears in the list once it connects.
 
 ### Recommended workflow for a new screen size

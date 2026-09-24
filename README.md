@@ -2,6 +2,14 @@
 
 Put live [KIP](https://github.com/mxtommy/Kip) dashboards on cheap ESP32 touchscreens around the boat.
 
+<p>
+  <img src="signalk-kipcast/images/windsteer.jpeg" alt="KIP wind steering gauge on a 4-inch KIPCast screen" width="260">
+  <img src="signalk-kipcast/images/battery.jpeg" alt="House battery current, voltage and state of charge" width="260">
+  <img src="signalk-kipcast/images/switches.jpeg" alt="Digital switches for the plotter, AIS and VHF" width="260">
+</p>
+
+<sub>KIP dashboards on the 4" 480×480 screen.</sub>
+
 A Signal K plugin on the Raspberry Pi runs KIP in headless Chromium and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" (800×480) and the 4" (480×480). Screens of both sizes can be used at once. Touches on the screen are sent back and injected into KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
 
 ```

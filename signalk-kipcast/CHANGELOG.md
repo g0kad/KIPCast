@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-09-24)
+
+- Screenshots for the App Store listing and the README.
+
 ## 0.1.0 (2026-09-24)
 
 First release.

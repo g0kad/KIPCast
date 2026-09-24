@@ -14,6 +14,10 @@
  *   HTTP/WS (default :3050) - browser test viewer at /, WebSocket at /ws?id=...,
  *                           known displays (read-only JSON) at /displays
  *
+ * With viewerAuth, the viewer port needs a one-time pass from issueViewerPass()
+ * (handed out by the Signal K plugin, behind Signal K's login). The pass is
+ * swapped for a cookie, which the page, /displays and /ws then require.
+ *
  * Each display's size is remembered in displaysFile, so the viewer opens a
  * display at the right size even while the screen itself is off.
  *
@@ -31,6 +35,7 @@
  * Downstream (WS):  one binary message per JPEG.
  */
 
+const crypto = require('crypto');
 const http = require('http');
 const net = require('net');
 const fs = require('fs');
@@ -52,6 +57,9 @@ const DEFAULTS = {
   seedProfileDir: path.join(__dirname, '..', 'chrome-profile'), // copied into new display profiles
   displaysFile: path.join(__dirname, '..', 'displays.json'),     // remembered display sizes
   idleCloseSec: 300,         // close a display's Chromium this long after it leaves
+  viewerAuth: false,         // viewer port needs a pass from issueViewerPass()
+  viewerPassSec: 60,         // how long a pass is valid for (used once)
+  viewerCookieSec: 12 * 3600, // how long the cookie a pass buys lasts
 };
 
 // Caches aren't worth copying when seeding a new display's profile, and the
@@ -292,6 +300,8 @@ class KIPCast {
     this.displays = new Map();         // id -> { width, height, source, lastSeen }
     this.saveTimer = null;
     this.stopping = false;             // no new Chromiums once stop() has begun
+    this.viewerPasses = new Map();     // one-time pass -> expiry (ms)
+    this.viewerCookies = new Map();    // cookie value -> expiry (ms)
     this.loadDisplays();
   }
 
@@ -566,21 +576,79 @@ class KIPCast {
     this.tcpServer.listen(this.opts.tcpPort, () => this.log(`ESP32 displays: tcp port ${this.opts.tcpPort}`));
   }
 
+  /* ---- Viewer login ---- */
+
+  // A one-time pass for the viewer port. The plugin hands these out to
+  // browsers already logged in to Signal K.
+  issueViewerPass() {
+    const pass = crypto.randomBytes(24).toString('base64url');
+    this.viewerPasses.set(pass, Date.now() + this.opts.viewerPassSec * 1000);
+    return pass;
+  }
+
+  static pruneExpired(map) {
+    const now = Date.now();
+    for (const [k, expires] of map) if (expires <= now) map.delete(k);
+  }
+
+  // Uses up a pass. Returns a new cookie value, or null if the pass is no good.
+  redeemViewerPass(pass) {
+    KIPCast.pruneExpired(this.viewerPasses);
+    if (!pass || !this.viewerPasses.delete(pass)) return null;
+    const cookie = crypto.randomBytes(24).toString('base64url');
+    KIPCast.pruneExpired(this.viewerCookies);
+    this.viewerCookies.set(cookie, Date.now() + this.opts.viewerCookieSec * 1000);
+    return cookie;
+  }
+
+  viewerAllowed(req) {
+    if (!this.opts.viewerAuth) return true;
+    const m = /(?:^|;\s*)kipcast_viewer=([^;]+)/.exec(req.headers.cookie || '');
+    const expires = m && this.viewerCookies.get(m[1]);
+    return Boolean(expires && expires > Date.now());
+  }
+
   startHttp() {
     const viewer = path.join(__dirname, '..', 'public', 'viewer.html');
+    const denied = (res) => {
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(DENIED_PAGE);
+    };
     this.httpServer = http.createServer((req, res) => {
-      if (req.url === '/' || req.url.startsWith('/?')) {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      const url = new URL(req.url, 'http://x');
+      if (url.pathname === '/') {
+        const pass = url.searchParams.get('pass');
+        if (this.opts.viewerAuth && pass) {
+          const cookie = this.redeemViewerPass(pass);
+          if (!cookie) return denied(res);
+          // Swap the pass for a cookie, and drop it from the address bar.
+          url.searchParams.delete('pass');
+          res.writeHead(303, {
+            'Set-Cookie': `kipcast_viewer=${cookie}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${this.opts.viewerCookieSec}`,
+            Location: `/${url.search}`,
+          });
+          return res.end();
+        }
+        if (!this.viewerAllowed(req)) return denied(res);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         fs.createReadStream(viewer).pipe(res);
-      } else if (req.url === '/displays' && req.method === 'GET') {
-        // Read-only here: this port has no login. Changes go through Signal K.
+      } else if (url.pathname === '/displays' && req.method === 'GET') {
+        // Read-only here. Changes go through Signal K.
+        if (!this.viewerAllowed(req)) return denied(res);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(this.listDisplays()));
       } else {
         res.writeHead(404).end();
       }
     });
-    this.wss = new WebSocketServer({ server: this.httpServer, path: '/ws' });
+    this.wss = new WebSocketServer({
+      server: this.httpServer,
+      path: '/ws',
+      // A page on another site can't open the WebSocket with the viewer's
+      // cookie: the Origin must be this server.
+      verifyClient: ({ req, origin }) => this.viewerAllowed(req) &&
+        (!this.opts.viewerAuth || origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`),
+    });
     this.wss.on('connection', (ws, req) => {
       const q = new URL(req.url, 'http://x').searchParams;
       const id = sanitiseId(q.get('id') || 'viewer');
@@ -636,6 +704,15 @@ const NAMED_KEYS = {
   Delete: [46, 'Delete'], Home: [36, 'Home'], End: [35, 'End'], PageUp: [33, 'PageUp'], PageDown: [34, 'PageDown'],
   ArrowLeft: [37, 'ArrowLeft'], ArrowUp: [38, 'ArrowUp'], ArrowRight: [39, 'ArrowRight'], ArrowDown: [40, 'ArrowDown'],
 };
+
+// Shown on the viewer port without a valid pass or cookie.
+const DENIED_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>KIPCast viewer</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#1c2733;color:#d7dee6;
+font:16px/1.5 system-ui,sans-serif}main{max-width:420px;padding:24px}h1{font-size:20px}</style></head>
+<body><main><h1>Open this display from Signal K</h1>
+<p>The KIPCast viewer needs a Signal K login. In the Signal K admin UI, go to
+<b>Webapps &rarr; KIPCast</b> and click <b>Open</b> next to the display.</p></main></body></html>`;
 
 // CDP key event fields for a named key or a single ASCII letter/digit.
 function keyInfo(name) {

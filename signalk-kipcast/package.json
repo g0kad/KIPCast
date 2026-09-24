@@ -1,6 +1,6 @@
 {
   "name": "signalk-kipcast",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Cast live KIP dashboards to low-cost ESP32 touchscreens, with touch passed back to KIP",
   "main": "index.js",
   "files": [
@@ -45,7 +45,7 @@
   },
   "signalk": {
     "displayName": "KIPCast",
-    "appIcon": "./public/icon.svg",
+    "appIcon": "icon.svg",
     "screenshots": [
       "./images/windsteer.jpeg",
       "./images/battery.jpeg",

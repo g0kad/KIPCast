@@ -39,7 +39,9 @@ Editing KIP's layout on the touchscreen itself is fiddly, so build the dashboard
 
 ## Security
 
-The browser viewer on port 3050 has no password of its own. Anyone who can reach that port can use KIP as whichever user a display is logged in as, so only run KIPCast on a network you trust. Adding and forgetting displays needs a Signal K login.
+The browser viewer on port 3050 uses your Signal K login: open it with **Open** in **Webapps → KIPCast**, which gives it a pass that lasts 12 hours. This relies on Signal K having security turned on, and can be switched off in the plugin settings.
+
+The screens connect on port 3051, which has no login because an ESP32 can't log in. Anything on the network that speaks KIPCast's protocol can show and touch a display's KIP, so keep KIPCast on a network you trust.
 
 ## Settings
 
@@ -53,6 +55,7 @@ The browser viewer on port 3050 has no password of its own. Anyone who can reach
 | Browser viewer port | 3050 | |
 | Input mode | `touch` | Switch to `mouse` if a page ignores touch events. |
 | Chromium path | auto | |
+| Browser viewer needs a Signal K login | on | |
 
 ## Licence
 

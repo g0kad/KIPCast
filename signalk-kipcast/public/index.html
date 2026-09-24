@@ -163,7 +163,7 @@
           <span class="size">${d.width}×${d.height}</span>
           <span class="status">${status(d)}</span>
           <span class="actions">
-            <a class="btn primary" href="${viewer}?id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener">Open</a>
+            <a class="btn primary" href="${viewer}?id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener" data-open>Open</a>
             <button type="button" data-forget="${esc(d.id)}" ${d.screens ? 'disabled title="Connected screens can’t be forgotten"' : ''}>Forget</button>
           </span>
         </div>`).join('');
@@ -184,6 +184,28 @@
       list.innerHTML = `<div class="empty">Couldn’t load displays: ${esc(e.message)}. Is the KIPCast plugin enabled?</div>`;
     }
   }
+
+  // The viewer port has no login of its own: ask Signal K for a one-time pass
+  // and hand it over in the address. The window is opened first, so the
+  // click still counts as the user's and isn't blocked as a popup.
+  list.addEventListener('click', async (e) => {
+    const link = e.target.closest('a[data-open]');
+    if (!link) return;
+    e.preventDefault();
+    const win = window.open('', '_blank');
+    try {
+      const r = await fetch('/plugins/signalk-kipcast/viewer-pass', { method: 'POST', credentials: 'include' });
+      if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'Log in to Signal K first' : r.statusText);
+      const { pass } = await r.json();
+      const url = new URL(link.href);
+      if (pass) url.searchParams.set('pass', pass);
+      if (win) win.opener = null;
+      (win || window).location = url.href;  // same tab if popups are blocked
+    } catch (err) {
+      if (win) win.close();
+      alert(`Couldn’t open the viewer: ${err.message}`);
+    }
+  });
 
   list.addEventListener('click', async (e) => {
     const id = e.target.dataset && e.target.dataset.forget;

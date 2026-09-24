@@ -23,12 +23,18 @@ module.exports = function (app) {
       httpPort: { type: 'number', title: 'Browser viewer port', default: DEFAULTS.httpPort },
       inputMode: { type: 'string', title: 'Input mode', enum: ['touch', 'mouse'], default: DEFAULTS.inputMode },
       chromiumPath: { type: 'string', title: 'Chromium path (blank = auto-detect)', default: '' },
+      viewerAuth: {
+        type: 'boolean',
+        title: 'Browser viewer needs a Signal K login (open it from Webapps → KIPCast)',
+        default: true,
+      },
     },
   };
 
   plugin.start = (options) => {
     cast = new KIPCast({
       ...options,
+      viewerAuth: options.viewerAuth !== false,  // on unless turned off
       profilesDir: path.join(app.getDataDirPath(), 'chrome-profiles'),
       seedProfileDir: path.join(app.getDataDirPath(), 'chrome-profile'),
       displaysFile: path.join(app.getDataDirPath(), 'displays.json'),
@@ -40,7 +46,7 @@ module.exports = function (app) {
   };
 
   // Backs the KIPCast webapp (public/index.html), at /plugins/signalk-kipcast/.
-  // Behind Signal K's own login, unlike the viewer port.
+  // Behind Signal K's own login; the viewer port gets in with a pass from here.
   plugin.registerWithRouter = (router) => {
     const running = (res) => cast || (res.status(503).json({ error: 'KIPCast is not running' }), null);
 
@@ -62,6 +68,13 @@ module.exports = function (app) {
       } catch (e) {
         res.status(400).json({ error: e.message });
       }
+    });
+
+    // A one-time pass that lets this browser into the viewer port. Only
+    // reachable with a Signal K login, so the viewer inherits it.
+    router.post('/viewer-pass', (req, res) => {
+      if (!running(res)) return;
+      res.json({ pass: cast.opts.viewerAuth ? cast.issueViewerPass() : null });
     });
 
     router.delete('/displays/:id', (req, res) => {

@@ -93,6 +93,8 @@
     ws.onclose = () => {
       led.classList.remove('on');
       state.textContent = 'Disconnected. Retrying in 2 s';
+      // If the viewer login has run out, reloading shows how to get back in.
+      fetch('/displays').then((r) => { if (r.status === 403) location.reload(); }).catch(() => {});
       setTimeout(connect, 2000);
     };
     ws.onmessage = async (ev) => {

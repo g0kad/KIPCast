@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0 (2026-09-24)
+
+- The browser viewer now uses the Signal K login. **Open** on the Displays page hands it a one-time pass, swapped for a cookie that lasts 12 hours. Visiting port 3050 any other way shows how to get in. Can be switched off in the plugin settings.
+- Fixed the app icon missing from Signal K's Webapps page.
+
 ## 0.1.1 (2026-09-24)
 
 - Screenshots for the App Store listing and the README.

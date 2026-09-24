@@ -83,7 +83,7 @@ The page and its changes need a Signal K login. The plugin status in **Server �
 2. **Remembered.** When the viewer opens a display id without its screen, it uses the remembered size, so dashboards are always laid out at the size the screen will show them.
 3. **Default.** An id the Pi has never seen uses the plugin's default width and height (800×480).
 
-For an id the Pi has never seen, the viewer can also set a size in its URL: `http://<pi>:3050/?id=helm&w=480&h=480`.
+For an id the Pi has never seen, the viewer can also set a size in its URL, for example `&w=480&h=480` after the `?id=`.
 
 If a screen connects while its id is open in the viewer at a different size, the page is reopened at the screen's size. The viewer reconnects by itself a couple of seconds later.
 
@@ -124,9 +124,13 @@ A 480×480 screen has a little over half the pixels of an 800×480 one, and it's
 
 ### The browser viewer
 
-The viewer at `http://<pi>:3050/?id=<display id>` uses the same protocol as the ESP32, and mouse drags are sent as touches. Click the screen to give it keyboard focus, and your typing and pastes go to KIP. Its display id box suggests the displays the Pi knows about.
+The viewer, on port 3050, uses the same protocol as the ESP32, and mouse drags are sent as touches. Click the screen to give it keyboard focus, and your typing and pastes go to KIP. Its display id box suggests the displays the Pi knows about.
 
-The viewer has no password of its own. Anyone who can reach port 3050 can use KIP as whichever user that display is logged in as, so only expose it on a network you trust. Adding and forgetting displays is only possible from the Displays page, behind the Signal K login.
+**Login.** The viewer uses your Signal K login rather than a password of its own. Open it with **Open** on the Displays page: that asks Signal K for a one-time pass, which the viewer swaps for a cookie lasting 12 hours. Going to port 3050 any other way, or after the cookie runs out, shows a page saying to open the display from Signal K. The cookie covers every display id, so you can switch display in the viewer without going back.
+
+This only protects the viewer if Signal K itself has security turned on. It can be switched off in the plugin settings, which leaves the viewer open to anyone who can reach port 3050.
+
+The screens' own port, 3051, has no login: an ESP32 has no way to log in. Anything on the network that speaks the protocol can show and touch a display's KIP, so keep KIPCast on a network you trust.
 
 ### Plugin settings
 
@@ -140,6 +144,7 @@ The viewer has no password of its own. Anyone who can reach port 3050 can use KI
 | Browser viewer port | 3050 | Port for the test viewer. |
 | Input mode | `touch` | Switch to `mouse` if a page ignores touch events. |
 | Chromium path | auto | Checks `/usr/bin/chromium`, `chromium-browser` and `google-chrome`. If Chromium can't be found, the plugin still starts and says so in its status; displays can't connect until it's installed. |
+| Browser viewer needs a Signal K login | on | See [The browser viewer](#the-browser-viewer). |
 
 A display's Chromium is shut down 5 minutes after its last screen disconnects, and starts again when a screen connects.
 
@@ -233,10 +238,11 @@ This is the same for the ESP32 (TCP) and the browser viewer (WebSocket), so othe
 If a display doesn't send `A` within 5 s, the Pi sends the next frame anyway.
 
 **Display list (HTTP, JSON):**
-- `GET http://<pi>:3050/displays`: read-only, used by the viewer.
+- `GET http://<pi>:3050/displays`: read-only, used by the viewer. Needs the viewer's cookie.
 - `GET /plugins/signalk-kipcast/displays` on Signal K: the same list plus the viewer port. Needs a Signal K login, as do the two below.
 - `POST /plugins/signalk-kipcast/displays` with `{"id", "width", "height"}`: add or resize a display.
 - `DELETE /plugins/signalk-kipcast/displays/<id>`: forget a display.
+- `POST /plugins/signalk-kipcast/viewer-pass`: a one-time pass for the viewer, as `{"pass"}`. Open `http://<pi>:3050/?id=<id>&pass=<pass>` within a minute to swap it for the cookie. `pass` is null if the viewer login is switched off.
 
 ## Developing the plugin
 
@@ -255,7 +261,7 @@ Environment variables:
 - `KIPCAST_INPUT` (`touch` or `mouse`)
 - `KIPCAST_CHROMIUM`
 
-The ports are fixed at 3050 and 3051 in this mode, so stop the plugin first.
+The ports are fixed at 3050 and 3051 in this mode, so stop the plugin first. The viewer has no login in this mode, as there's no Signal K to hand out passes.
 
 ## Licence
 

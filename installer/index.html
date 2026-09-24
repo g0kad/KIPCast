@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIPCast display installer</title>
+<meta name="description" content="Install the KIPCast firmware on a Waveshare ESP32-S3 touchscreen from your browser.">
+<script type="module" src="https://cdn.jsdelivr.net/npm/esp-web-tools@10/dist/web/install-button.js"></script>
+<style>
+  :root {
+    --chart-table: #1c2733;
+    --housing: #0e1216;
+    --line: #2d3640;
+    --ink: #d7dee6;
+    --dim: #8d99a6;
+    --accent: #6fb3e0;
+    --warn: #e0a53b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--chart-table); color: var(--ink);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { width: min(100% - 32px, 760px); margin: 40px auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p.lede { margin: 0 0 28px; color: var(--dim); }
+  a { color: var(--accent); }
+  .panel {
+    background: var(--housing); border-radius: 12px; padding: 20px 22px; margin-bottom: 20px;
+    box-shadow: inset 0 1px 0 #2a323b, 0 12px 30px rgb(0 0 0 / .35);
+  }
+  .boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .board { border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; align-content: start; }
+  .board h3 { margin: 0; font-size: 16px; }
+  .board p { margin: 0; color: var(--dim); font-size: 14px; }
+  esp-web-install-button { --esp-tools-button-color: #2f6a92; --esp-tools-button-border-radius: 6px; }
+  ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; }
+  li::marker { color: var(--dim); }
+  .unsupported { color: var(--warn); font-size: 14px; }
+  code { background: #1a2027; padding: 1px 5px; border-radius: 4px; font-size: 14px; }
+  .small { font-size: 14px; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>KIPCast display installer</h1>
+  <p class="lede">Install the KIPCast firmware on a Waveshare ESP32-S3 touchscreen, straight from this page.
+    You need Chrome or Edge on a computer, and a USB-C data cable.
+    <a href="https://github.com/g0kad/KIPCast#readme">What is KIPCast?</a></p>
+
+  <section class="panel">
+    <h2>1. Install</h2>
+    <div class="boards">
+      <div class="board">
+        <h3>Waveshare ESP32-S3-Touch-LCD-7</h3>
+        <p>7", 800×480. Plug into the USB-C port marked <b>USB</b>, not the one marked UART.</p>
+        <esp-web-install-button manifest="manifest-7in.json">
+          <span slot="unsupported" class="unsupported">This browser can't install firmware. Use Chrome or Edge on a computer.</span>
+          <span slot="not-allowed" class="unsupported">Open this page over HTTPS to install.</span>
+        </esp-web-install-button>
+      </div>
+      <div class="board">
+        <h3>Waveshare ESP32-S3-Touch-LCD-4, Rev4.0</h3>
+        <p>4", 480×480. It has one USB-C port. Earlier revisions aren't supported yet.</p>
+        <esp-web-install-button manifest="manifest-4in.json">
+          <span slot="unsupported" class="unsupported">This browser can't install firmware. Use Chrome or Edge on a computer.</span>
+          <span slot="not-allowed" class="unsupported">Open this page over HTTPS to install.</span>
+        </esp-web-install-button>
+      </div>
+    </div>
+    <p class="small">Click <b>Connect</b>, choose the screen's port (usually "USB JTAG/serial debug unit"), then <b>Install</b>.
+      When updating a screen that's already set up, leave <b>Erase device</b> unticked to keep its settings.</p>
+  </section>
+
+  <section class="panel">
+    <h2>2. Set up the screen</h2>
+    <ol>
+      <li>After installing, the screen shows <b>KIPCast setup</b> and its own WiFi network, called <code>KIPCast-</code> and four characters.</li>
+      <li>On your phone, join that network. The setup page opens by itself; if it doesn't, browse to <code>http://192.168.4.1</code>.</li>
+      <li>Choose the boat's WiFi, enter its password and give the screen a display id, for example <code>helm</code>.
+        Leave <b>Signal K server</b> blank and the screen finds it on the network by itself.</li>
+      <li>Save. The screen restarts, joins the WiFi and connects to the KIPCast plugin in Signal K.</li>
+    </ol>
+    <p class="small">To change the settings later, touch and hold the screen for two seconds while it shows
+      <b>Starting</b> or any other status message.</p>
+  </section>
+
+  <section class="panel">
+    <h2>If it doesn't work</h2>
+    <ol>
+      <li><b>No port to choose:</b> try another cable, as some only carry power. On the 7", check you're using the port marked <b>USB</b>.
+        If it still doesn't appear, hold the <b>BOOT</b> button while plugging the cable in.</li>
+      <li><b>The 7" screen stays blank after installing:</b> unplug it and plug it back in. One of its display lines shares a pin
+        that can leave it in download mode after a reset.</li>
+      <li><b>The screen can't find Signal K:</b> check the KIPCast plugin is installed and enabled in Signal K.
+        Or open setup and enter the Pi's IP address as the Signal K server.</li>
+    </ol>
+  </section>
+
+  <p class="small">Firmware <span id="version">version</span>.
+    <a href="https://github.com/g0kad/KIPCast/releases">Releases and downloads</a> ·
+    <a href="https://github.com/g0kad/KIPCast">Source</a></p>
+</main>
+<script>
+  fetch('manifest-7in.json').then((r) => r.json())
+    .then((m) => { document.getElementById('version').textContent = m.version; })
+    .catch(() => {});
+</script>
+</body>
+</html>

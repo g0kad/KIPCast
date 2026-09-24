@@ -1,24 +1,32 @@
 #pragma once
 
-// ---- WiFi ----
-// Credentials live in secrets.h, which git ignores. Copy secrets.example.h
-// to secrets.h and fill it in.
+// ---- Settings ----
+// WiFi, display id and server address are set on the screen's setup page
+// and saved on the board. An optional secrets.h (copy secrets.example.h)
+// provides defaults for your own builds; the release builds have none, so
+// the screen opens its setup page on first boot.
 #if __has_include("secrets.h")
   #include "secrets.h"
-#else
-  #error "include/secrets.h missing: copy include/secrets.example.h to include/secrets.h and set your WiFi details"
 #endif
 
-// ---- KIPCast server (the Pi) ----
-// An IP address is most reliable. A name ending in ".local" is resolved via mDNS.
-#define KIPCAST_HOST   "openplotter.local"
+#ifndef WIFI_SSID
+  #define WIFI_SSID    ""
+#endif
+#ifndef WIFI_PASS
+  #define WIFI_PASS    ""
+#endif
+
+// Blank: find the Signal K server on the network by itself (mDNS). Otherwise
+// an IP address, or a name; one ending in ".local" is resolved via mDNS.
+#ifndef KIPCAST_HOST
+  #define KIPCAST_HOST ""
+#endif
 #define KIPCAST_PORT   3051
 
-// Each physical screen gets its own id -> its own KIP tab on the Pi,
-// so swiping on one screen doesn't change the others. Set it per screen in
-// secrets.h; this is only the fallback.
+// Each physical screen gets its own id -> its own KIP on the Pi, so swiping
+// on one screen doesn't change the others. Blank: made from the board's MAC.
 #ifndef DISPLAY_ID
-  #define DISPLAY_ID   "saloon"
+  #define DISPLAY_ID   ""
 #endif
 
 // ---- Panel ----
@@ -34,3 +42,8 @@
 // Touch tuning
 #define TOUCH_MOVE_MIN_MS   30   // don't send moves faster than this
 #define TOUCH_MOVE_MIN_PX   3    // ignore jitter smaller than this
+
+// Touch and hold this long on a status screen to open setup.
+#define SETUP_HOLD_MS       2000
+// Leave setup (restart unchanged) after this long with no settings saved.
+#define SETUP_TIMEOUT_MS    (10UL * 60 * 1000)

@@ -5,6 +5,8 @@
  * - Connects to the KIPCast server on the Pi over TCP
  * - Receives JPEG frames, decodes them straight onto the RGB panel
  * - Sends touch down/move/up back, which the Pi injects into KIP
+ * - WiFi, display id and server are set on a setup page the screen serves
+ *   from its own WiFi network, and saved on the board
  *
  * Build: PlatformIO (see platformio.ini), one env per board. Panel configs
  * live in include/boards/<board>/esp_panel_board_custom_conf.h.
@@ -12,9 +14,14 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <WebServer.h>
+#include <DNSServer.h>
+#include <Preferences.h>
+#include <esp_mac.h>
 #include <JPEGDEC.h>
 #include <esp_display_panel.hpp>
 #include "config.h"
+#include "fonts.h"
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -27,6 +34,15 @@ static WiFiClient server;  // not "link": clashes with POSIX link()
 
 static uint8_t *jpegBuf = nullptr;
 
+// Settings saved on the board by the setup page. secrets.h, if present,
+// supplies the defaults.
+static struct {
+  String ssid, pass, host, id;
+} cfg;
+
+static void runSetup();
+static bool readTouch(int &x, int &y);
+
 /* ------------------------------------------------------------------ */
 /* Display helpers                                                     */
 /* ------------------------------------------------------------------ */
@@ -37,16 +53,100 @@ static int onJpegDraw(JPEGDRAW *d) {
   return 1;
 }
 
-// Solid colour fill, used as a simple status indicator before frames arrive.
-static void fillScreen(uint16_t rgb565) {
-  static uint16_t *band = nullptr;
-  const int bandH = 40;
-  if (!band) band = (uint16_t *)heap_caps_malloc(SCREEN_W * bandH * 2, MALLOC_CAP_SPIRAM);
-  for (int i = 0; i < SCREEN_W * bandH; i++) band[i] = rgb565;
-  for (int y = 0; y < SCREEN_H; y += bandH) lcd->drawBitmap(0, y, SCREEN_W, bandH, (const uint8_t *)band);
-}
+// Status and setup screens are drawn into a buffer, then copied to the panel.
+static uint16_t *canvas = nullptr;
 static const uint16_t COL_WIFI   = 0x0010;  // dark blue: joining WiFi
 static const uint16_t COL_SERVER = 0x4200;  // dark amber: looking for KIPCast
+static const uint16_t COL_SETUP  = 0x0200;  // dark green: setup
+static const uint16_t COL_TEXT   = 0xFFFF;
+static const uint16_t COL_DIM    = 0xBDF7;
+
+static void pushCanvas() {
+  const int bandH = 40;
+  for (int y = 0; y < SCREEN_H; y += bandH)
+    lcd->drawBitmap(0, y, SCREEN_W, min(bandH, SCREEN_H - y), (const uint8_t *)(canvas + y * SCREEN_W));
+}
+
+// Mixes two RGB565 colours; a is the weight of fg, 0-15.
+static uint16_t blend(uint16_t fg, uint16_t bg, uint8_t a) {
+  uint32_t r = (((fg >> 11) & 31) * a + ((bg >> 11) & 31) * (15 - a)) / 15;
+  uint32_t g = (((fg >> 5) & 63) * a + ((bg >> 5) & 63) * (15 - a)) / 15;
+  uint32_t b = ((fg & 31) * a + (bg & 31) * (15 - a)) / 15;
+  return (r << 11) | (g << 5) | b;
+}
+
+static const Glyph *glyphFor(const Font &f, char c) {
+  if (c < f.first || c > f.last) c = '?';
+  return &f.glyphs[c - f.first];
+}
+
+static int textWidth(const Font &f, const String &s) {
+  int w = 0;
+  for (char c : s) w += glyphFor(f, c)->advance;
+  return w;
+}
+
+// Draws one line of text with its baseline at y.
+static void drawLine(int x, int y, const String &s, const Font &f, uint16_t colour) {
+  for (char c : s) {
+    const Glyph *g = glyphFor(f, c);
+    const uint8_t *bits = f.bits + g->offset;
+    const int rowBytes = (g->w + 1) / 2;
+    for (int row = 0; row < g->h; row++) {
+      int py = y + g->y + row;
+      if (py < 0 || py >= SCREEN_H) continue;
+      for (int col = 0; col < g->w; col++) {
+        int px = x + g->x + col;
+        if (px < 0 || px >= SCREEN_W) continue;
+        uint8_t b = bits[row * rowBytes + col / 2];
+        uint8_t a = col & 1 ? b & 15 : b >> 4;
+        if (a) {
+          uint16_t &dst = canvas[py * SCREEN_W + px];
+          dst = blend(colour, dst, a);
+        }
+      }
+    }
+    x += g->advance;
+  }
+}
+
+// Draws text centred and word-wrapped to the screen width, with the top of
+// the first line at y. Returns the y below the last line.
+static int drawText(int y, const String &text, const Font &font, uint16_t colour) {
+  const int maxW = SCREEN_W - 48;
+  String line, rest = text;
+  auto flush = [&]() {
+    drawLine((SCREEN_W - textWidth(font, line)) / 2, y + font.ascent, line, font, colour);
+    y += font.lineHeight;
+    line = "";
+  };
+  while (rest.length()) {
+    int sp = rest.indexOf(' ');
+    String word = sp < 0 ? rest : rest.substring(0, sp);
+    rest = sp < 0 ? "" : rest.substring(sp + 1);
+    String longer = line.length() ? line + " " + word : word;
+    if (textWidth(font, longer) > maxW && line.length()) { flush(); line = word; }
+    else line = longer;
+  }
+  if (line.length()) flush();
+  return y;
+}
+
+// A full-screen message: background colour, a heading, lines of text and an
+// optional footer.
+static void showScreen(uint16_t bg, const String &heading, std::initializer_list<String> lines,
+                       const String &footer = "") {
+  for (int i = 0; i < SCREEN_W * SCREEN_H; i++) canvas[i] = bg;
+  int y = drawText(SCREEN_H / 10, heading, FONT_HEADING, COL_TEXT) + 12;
+  for (const String &l : lines)
+    if (l.length()) y = drawText(y, l, FONT_BODY, COL_TEXT) + 10;
+  if (footer.length()) drawText(SCREEN_H - 20 - FONT_SMALL.lineHeight, footer, FONT_SMALL, COL_DIM);
+  pushCanvas();
+}
+
+static void showStatus(uint16_t bg, const String &status, const String &detail = "") {
+  showScreen(bg, "KIPCast", {"Display: " + cfg.id, status, detail}, "Touch and hold for setup");
+}
 
 #ifdef KIPCAST_BOARD_LCD4
 /*
@@ -123,30 +223,99 @@ static void initDisplay() {
   if (!board->begin()) { Serial.println("board begin failed"); while (true) delay(1000); }
   touch = board->getTouch();
   if (!touch) Serial.println("no touch controller: view-only mode");
+  canvas = (uint16_t *)heap_caps_malloc(SCREEN_W * SCREEN_H * 2, MALLOC_CAP_SPIRAM);
+  if (!canvas) { Serial.println("canvas alloc failed"); while (true) delay(1000); }
   Serial.println("display ready");
+}
+
+/* ------------------------------------------------------------------ */
+/* Touch                                                               */
+/* ------------------------------------------------------------------ */
+
+static bool readTouch(int &x, int &y) {
+  TouchPoint pt;
+  // Returns number of points read, or -1 on error. timeout 0 = don't wait for IRQ.
+  if (touch->readPoints(&pt, 1, 0) <= 0) return false;
+  x = pt.x;
+  y = pt.y;
+  return true;
+}
+
+// True once the screen has been touched continuously for SETUP_HOLD_MS.
+// Only used on the status screens, never while KIP is showing.
+static bool touchHeld() {
+  if (!touch) return false;
+  static uint32_t since = 0, lastSeen = 0;
+  int x, y;
+  uint32_t now = millis();
+  if (readTouch(x, y)) {
+    if (!since || now - lastSeen > 200) since = now;
+    lastSeen = now;
+    return now - since >= SETUP_HOLD_MS;
+  }
+  if (now - lastSeen > 200) since = 0;
+  return false;
+}
+
+// Waits, but opens setup if the screen is touched and held meanwhile.
+static void waitOrSetup(uint32_t ms) {
+  for (uint32_t t0 = millis(); millis() - t0 < ms; delay(10))
+    if (touchHeld()) runSetup();
 }
 
 /* ------------------------------------------------------------------ */
 /* Network                                                             */
 /* ------------------------------------------------------------------ */
 
-static void ensureWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  fillScreen(COL_WIFI);
-  Serial.printf("WiFi: joining %s\n", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);  // power save adds big latency to every frame
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  for (int i = 1; WiFi.status() != WL_CONNECTED; i++) {
-    delay(250);
-    if (i % 20 == 0) Serial.printf("WiFi: still joining (status %d)\n", WiFi.status());
-  }
-  Serial.printf("WiFi: %s\n", WiFi.localIP().toString().c_str());
-  MDNS.begin("kipcast-" DISPLAY_ID);
+static String hostName() {
+  String h = "kipcast-" + cfg.id;
+  h.toLowerCase();
+  h.replace('_', '-');
+  return h;
 }
 
-static bool resolveHost(IPAddress &ip) {
-  String host = KIPCAST_HOST;
+static void ensureWifi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  showStatus(COL_WIFI, "Joining WiFi", cfg.ssid);
+  Serial.printf("WiFi: joining %s\n", cfg.ssid.c_str());
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);  // power save adds big latency to every frame
+  WiFi.setHostname(hostName().c_str());
+  WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
+  uint32_t t0 = millis(), lastBegin = t0;
+  bool warned = false;
+  while (WiFi.status() != WL_CONNECTED) {
+    waitOrSetup(250);
+    if (!warned && millis() - t0 > 30000) {
+      showStatus(COL_WIFI, "Can't join " + cfg.ssid,
+                 "Still trying. If the WiFi details have changed, touch and hold to set them.");
+      warned = true;
+    }
+    if (millis() - lastBegin > 30000) {  // start over every 30 s
+      Serial.printf("WiFi: still joining (status %d)\n", WiFi.status());
+      WiFi.disconnect();
+      WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
+      lastBegin = millis();
+    }
+  }
+  Serial.printf("WiFi: %s\n", WiFi.localIP().toString().c_str());
+  MDNS.end();
+  MDNS.begin(hostName().c_str());
+}
+
+// Finds the Pi: the configured host, or else the Signal K server announcing
+// itself on the network. `where` names it for the status screen.
+static bool resolveHost(IPAddress &ip, String &where) {
+  const String &host = cfg.host;
+  if (host.isEmpty()) {
+    where = "the Signal K server";
+    if (MDNS.queryService("signalk-http", "tcp") <= 0) return false;
+    ip = MDNS.address(0);
+    where = ip.toString();
+    return true;
+  }
+  where = host;
+  if (ip.fromString(host)) return true;
   if (host.endsWith(".local")) {
     ip = MDNS.queryHost(host.substring(0, host.length() - 6), 2000);
     return ip != IPAddress(0, 0, 0, 0);
@@ -170,18 +339,31 @@ static void sendLine(const char *s) {
 
 static void ensureLink() {
   if (server.connected()) return;
-  fillScreen(COL_SERVER);
-  while (!server.connected()) {
+  ensureWifi();
+  showStatus(COL_SERVER, "Looking for KIPCast",
+             cfg.host.isEmpty() ? "Searching the network for the Signal K server" : cfg.host);
+  for (int tries = 1; !server.connected(); tries++) {
     ensureWifi();
     IPAddress ip;
-    if (resolveHost(ip) && server.connect(ip, KIPCAST_PORT, 3000)) break;
-    Serial.println("KIPCast: server not reachable, retrying");
-    delay(2000);
+    String where;
+    bool found = resolveHost(ip, where);
+    if (found && server.connect(ip, KIPCAST_PORT, 3000)) break;
+    Serial.printf("KIPCast: %s %s, retrying\n", where.c_str(), found ? "not answering" : "not found");
+    if (tries == 3) {
+      if (!found)
+        showStatus(COL_SERVER, "Can't find " + where,
+                   cfg.host.isEmpty() ? "Is Signal K running? Touch and hold to enter its address."
+                                      : "Touch and hold to change the address.");
+      else
+        showStatus(COL_SERVER, "No answer from KIPCast at " + where,
+                   "Is the KIPCast plugin enabled in Signal K?");
+    }
+    waitOrSetup(2000);
   }
   server.setNoDelay(true);
   rxState = RX_HEADER; rxHdrGot = 0;
   char hello[64];
-  snprintf(hello, sizeof hello, "H %s %d %d", DISPLAY_ID, SCREEN_W, SCREEN_H);
+  snprintf(hello, sizeof hello, "H %s %d %d", cfg.id.c_str(), SCREEN_W, SCREEN_H);
   sendLine(hello);
   Serial.println("KIPCast: connected");
 }
@@ -229,19 +411,6 @@ static void pumpNetwork() {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Touch                                                               */
-/* ------------------------------------------------------------------ */
-
-static bool readTouch(int &x, int &y) {
-  TouchPoint pt;
-  // Returns number of points read, or -1 on error. timeout 0 = don't wait for IRQ.
-  if (touch->readPoints(&pt, 1, 0) <= 0) return false;
-  x = pt.x;
-  y = pt.y;
-  return true;
-}
-
 static void pollTouch() {
   if (!touch) return;
   static bool down = false;
@@ -273,6 +442,169 @@ static void pollTouch() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Settings and setup page                                             */
+/* ------------------------------------------------------------------ */
+
+static Preferences prefs;
+
+// Same rule as the plugin's display ids.
+static bool validId(const String &id) {
+  if (id.isEmpty() || id.length() > 32) return false;
+  for (char c : id)
+    if (!isalnum((unsigned char)c) && c != '_' && c != '-') return false;
+  return true;
+}
+
+static String macSuffix() {
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);  // works before WiFi has started
+  char s[5];
+  snprintf(s, sizeof s, "%02X%02X", mac[4], mac[5]);
+  return s;
+}
+
+static void loadSettings() {
+  prefs.begin("kipcast", false);
+  cfg.ssid = prefs.getString("ssid", WIFI_SSID);
+  cfg.pass = prefs.getString("pass", WIFI_PASS);
+  cfg.host = prefs.getString("host", KIPCAST_HOST);
+  cfg.id   = prefs.getString("id", DISPLAY_ID);
+  prefs.end();
+  if (!validId(cfg.id)) {
+    cfg.id = "screen-" + macSuffix();
+    cfg.id.toLowerCase();
+  }
+}
+
+static String htmlEscape(const String &s) {
+  String o;
+  for (char c : s) {
+    switch (c) {
+      case '&': o += "&amp;"; break;
+      case '<': o += "&lt;"; break;
+      case '>': o += "&gt;"; break;
+      case '"': o += "&quot;"; break;
+      default: o += c;
+    }
+  }
+  return o;
+}
+
+static const char PAGE_HEAD[] PROGMEM = R"(<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>KIPCast setup</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;background:#1c2733;color:#d7dee6;margin:0}
+main{max-width:420px;margin:0 auto;padding:16px}h1{font-size:22px}label{display:block;margin:16px 0 4px}
+input{box-sizing:border-box;width:100%;font:inherit;padding:8px;border-radius:6px;border:1px solid #2d3640;background:#0e1216;color:#d7dee6}
+small{color:#7d8a97}button{margin-top:24px;width:100%;font:inherit;padding:10px;border-radius:6px;border:0;background:#2f6a92;color:#fff}
+.err{color:#e06c5f}</style></head><body><main>)";
+
+static WebServer *web = nullptr;
+static DNSServer *dns = nullptr;
+static String networks;  // <option>s for the WiFi network list
+static bool saved = false;
+
+static void sendForm(const String &error = "") {
+  String p = FPSTR(PAGE_HEAD);
+  p += "<h1>KIPCast setup</h1><p>This screen is " + String(SCREEN_W) + "&times;" + String(SCREEN_H) + ".</p>";
+  if (error.length()) p += "<p class=err>" + htmlEscape(error) + "</p>";
+  p += "<form method=post action=/save>";
+  p += "<label for=ssid>WiFi network</label>";
+  p += "<input id=ssid name=ssid list=nets required autocomplete=off value=\"" + htmlEscape(cfg.ssid) + "\">";
+  p += "<datalist id=nets>" + networks + "</datalist>";
+  p += "<label for=pass>WiFi password</label><input id=pass name=pass type=password autocomplete=off";
+  p += cfg.pass.length() ? " placeholder=\"Unchanged\">" : ">";
+  p += "<label for=id>Display id</label>";
+  p += "<input id=id name=id required maxlength=32 pattern=\"[A-Za-z0-9_\\-]+\" autocapitalize=none value=\"" + htmlEscape(cfg.id) + "\">";
+  p += "<small>Letters, digits, - and _, for example <i>helm</i>. Each id gets its own KIP on the Pi; "
+       "screens with the same id show the same thing.</small>";
+  p += "<label for=host>Signal K server</label>";
+  p += "<input id=host name=host autocomplete=off autocapitalize=none placeholder=\"Found automatically\" value=\"" + htmlEscape(cfg.host) + "\">";
+  p += "<small>Leave blank to find it on the network, or enter the Pi's IP address or name.</small>";
+  p += "<button>Save and restart</button></form></main></body></html>";
+  web->send(200, "text/html", p);
+}
+
+static void handleSave() {
+  String ssid = web->arg("ssid"), pass = web->arg("pass"), id = web->arg("id"), host = web->arg("host");
+  ssid.trim(); id.trim(); host.trim();
+  if (ssid.isEmpty()) return sendForm("Enter the WiFi network.");
+  if (!validId(id)) return sendForm("The display id can only use letters, digits, - and _.");
+  if (pass.isEmpty() && ssid == cfg.ssid) pass = cfg.pass;  // left as "Unchanged"
+  prefs.begin("kipcast", false);
+  prefs.putString("ssid", ssid);
+  prefs.putString("pass", pass);
+  prefs.putString("id", id);
+  prefs.putString("host", host);
+  prefs.end();
+  Serial.printf("setup: saved (WiFi %s, id %s, server %s)\n", ssid.c_str(), id.c_str(), host.length() ? host.c_str() : "auto");
+  String p = FPSTR(PAGE_HEAD);
+  p += "<h1>Saved</h1><p>The screen is restarting and will join <b>" + htmlEscape(ssid) +
+       "</b>. You can reconnect this phone to your usual WiFi.</p></main></body></html>";
+  web->send(200, "text/html", p);
+  saved = true;
+}
+
+// The screen's own WiFi network and setup page. Never returns: restarts once
+// settings are saved, when the screen is tapped, or after SETUP_TIMEOUT_MS.
+static void runSetup() {
+  server.stop();
+  showScreen(COL_SETUP, "KIPCast setup", {"Looking for WiFi networks..."});
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_AP_STA);
+  String ap = "KIPCast-" + macSuffix();
+
+  int n = WiFi.scanNetworks();
+  for (int i = 0; i < n; i++) {
+    String opt = "<option value=\"" + htmlEscape(WiFi.SSID(i)) + "\">";
+    if (WiFi.SSID(i).length() && networks.indexOf(opt) < 0) networks += opt;
+  }
+  WiFi.scanDelete();
+
+  WiFi.softAP(ap.c_str());
+  delay(100);
+  IPAddress apIp = WiFi.softAPIP();
+  dns = new DNSServer();
+  dns->start(53, "*", apIp);  // every name leads here, so phones show the page by themselves
+  web = new WebServer(80);
+  web->on("/", HTTP_GET, []() { sendForm(); });
+  web->on("/save", HTTP_POST, handleSave);
+  web->onNotFound([apIp]() {
+    web->sendHeader("Location", "http://" + apIp.toString() + "/");
+    web->send(302, "text/plain", "");
+  });
+  web->begin();
+  Serial.printf("setup: WiFi %s, page at http://%s/\n", ap.c_str(), apIp.toString().c_str());
+
+  bool configured = cfg.ssid.length() > 0;
+  showScreen(COL_SETUP, "KIPCast setup", {
+      "1. On your phone, join the WiFi network " + ap,
+      "2. The setup page opens by itself. If it doesn't, browse to http://" + apIp.toString(),
+      "3. Choose the boat's WiFi and an id for this screen, then save."},
+    configured ? "Tap the screen to leave setup without changes" : "");
+
+  uint32_t started = millis(), lastTouch = millis();
+  bool released = false;  // ignore the hold that opened setup
+  while (true) {
+    dns->processNextRequest();
+    web->handleClient();
+    if (saved) {
+      showScreen(COL_SETUP, "Saved", {"Restarting..."});
+      delay(1500);
+      ESP.restart();
+    }
+    int x, y;
+    if (touch && readTouch(x, y)) {
+      if (released && configured) ESP.restart();
+      lastTouch = millis();
+    } else if (millis() - lastTouch > 500) {
+      released = true;
+    }
+    if (configured && millis() - started > SETUP_TIMEOUT_MS) ESP.restart();
+    delay(2);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 
 void setup() {
   Serial.begin(115200);
@@ -284,7 +616,12 @@ void setup() {
   jpegBuf = (uint8_t *)heap_caps_malloc(MAX_JPEG_BYTES, MALLOC_CAP_SPIRAM);
   if (!jpegBuf) { Serial.println("PSRAM alloc failed: is OPI PSRAM enabled?"); while (true) delay(1000); }
   initDisplay();
-  ensureWifi();
+  loadSettings();
+  Serial.printf("display id %s, server %s\n", cfg.id.c_str(), cfg.host.length() ? cfg.host.c_str() : "auto");
+  if (cfg.ssid.isEmpty()) runSetup();
+  // A moment to touch and hold for setup before anything else happens.
+  showStatus(COL_WIFI, "Starting");
+  waitOrSetup(2500);
 }
 
 void loop() {

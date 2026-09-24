@@ -1,0 +1,100 @@
+name: Firmware
+
+# Builds the display firmware for every board. A v* tag also publishes a
+# GitHub Release with the images attached, and the web installer to GitHub
+# Pages. Running it by hand (Actions > Firmware > Run workflow) republishes
+# the installer from the chosen branch.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'kipcast-display/**'
+      - 'installer/**'
+      - '.github/workflows/firmware.yml'
+  pull_request:
+    paths:
+      - 'kipcast-display/**'
+      - 'installer/**'
+      - '.github/workflows/firmware.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('kipcast-display/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      # No secrets.h here: the images have no WiFi details or display id
+      # built in, so each screen opens its setup page on first boot.
+      - name: Build
+        run: pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in
+
+      - name: Assemble installer site
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then VERSION="$GITHUB_REF_NAME"; else VERSION="${GITHUB_SHA::7}"; fi
+          mkdir site
+          cp installer/* site/
+          cp kipcast-display/.pio/build/kipcast-display/firmware.factory.bin site/kipcast-display-7in.bin
+          cp kipcast-display/.pio/build/kipcast-display-4in/firmware.factory.bin site/kipcast-display-4in.bin
+          sed -i "s/\"version\": \"dev\"/\"version\": \"$VERSION\"/" site/manifest-*.json
+          ls -l site
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: site/*.bin
+
+      - uses: actions/upload-pages-artifact@v3
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          path: site
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: '*.bin'
+          generate_release_notes: true
+          body: |
+            Install the display firmware from your browser: https://g0kad.github.io/KIPCast/
+
+            Or flash an image yourself at offset 0x0, for example:
+            `esptool --chip esp32s3 write-flash 0x0 kipcast-display-7in.bin`
+
+            The Signal K plugin is on npm as `signalk-kipcast`. See [CHANGELOG.md](https://github.com/g0kad/KIPCast/blob/main/signalk-kipcast/CHANGELOG.md).
+
+  pages:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

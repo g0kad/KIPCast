@@ -9,7 +9,9 @@
     "lib/",
     "public/",
     "test/",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "signalk-node-server-plugin",
@@ -41,6 +43,7 @@
     "ws": "^8.18.0"
   },
   "signalk": {
-    "displayName": "KIPCast"
+    "displayName": "KIPCast",
+    "appIcon": "./public/icon.svg"
   }
 }

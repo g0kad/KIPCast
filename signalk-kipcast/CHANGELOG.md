@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (not yet published)
+## 0.1.0 (2026-09-24)
 
 First release.
 
@@ -11,3 +11,4 @@ First release.
 - Frames are paced to a configurable maximum rate and only sent when the page changes.
 - A missing Chromium is shown in the plugin status instead of stopping the plugin.
 - Tests, run with `npm test`.
+- Display firmware installable from the browser, set up from a phone on the screen's own WiFi network, and finds the Signal K server by itself.

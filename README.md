@@ -27,20 +27,27 @@ Each display has an id (for example `saloon` or `helm`). Each id gets its own KI
 | [`signalk-kipcast/`](signalk-kipcast/) | Signal K plugin (Node.js). Also runs on its own with `node standalone.js`. |
 | [`kipcast-display/`](kipcast-display/) | PlatformIO firmware for the Waveshare ESP32-S3-Touch-LCD-7 and -4. |
 
+## Quick start
+
+1. **Install the plugin.** Install Chromium on the Pi (`sudo apt install chromium`), then install **KIPCast** from the Signal K App Store and enable it in **Server → Plugin Config → KIPCast**.
+2. **Install the firmware on a screen.** Plug it into a computer and use the [web installer](https://g0kad.github.io/KIPCast/) in Chrome or Edge.
+3. **Set up the screen.** It opens a WiFi network called `KIPCast-` and four characters. Join it on your phone and fill in the setup page: the boat's WiFi, and an id for the screen. The screen finds the Signal K server by itself.
+4. **Build its dashboards.** Open **Webapps → KIPCast** in Signal K. See [Recommended workflow for a new screen size](#recommended-workflow-for-a-new-screen-size).
+
 ## Pi: install the plugin
 
-Requirements: Signal K with KIP installed, Node.js 22.12 or later, and Chromium.
+Requirements: Signal K with KIP installed, Node.js 22.12 or later, and Chromium (`sudo apt install chromium`).
+
+Install **KIPCast** from the App Store in the Signal K admin UI, or from npm: `cd ~/.signalk && npm install signalk-kipcast`. Then restart Signal K, go to **Server → Plugin Config → KIPCast**, enable it and save.
+
+### Installing from a clone of this repository
 
 ```bash
-sudo apt install chromium               # skip if already installed
-
 git clone https://github.com/g0kad/KIPCast.git ~/KIPCast
 cd ~/KIPCast/signalk-kipcast && npm ci --omit=dev
 cd ~/.signalk && npm install ~/KIPCast/signalk-kipcast
 sudo systemctl restart signalk
 ```
-
-Then in the Signal K admin UI go to **Server → Plugin Config → KIPCast**, enable it and save.
 
 To update later: `cd ~/KIPCast && git pull`, run `npm ci --omit=dev` in `signalk-kipcast/`, then restart Signal K.
 
@@ -52,7 +59,7 @@ In the Signal K admin UI, open **Webapps → KIPCast**. It lists every display t
 
 | Column | Shows |
 |---|---|
-| Display | The display id, as set by `DISPLAY_ID` in the screen's firmware. |
+| Display | The display id, as set on the screen's setup page. |
 | Size | The resolution KIP is drawn at for that display. |
 | Status | Whether the screen is connected, open in the viewer, or when it was last seen. |
 
@@ -130,7 +137,27 @@ A display's Chromium is shut down 5 minutes after its last screen disconnects, a
 
 **Memory:** each connected display has its own Chromium, which used about 370 MB on a Pi 5 running KIP. Plan for that per screen alongside everything else the Pi runs. A display that has been off for 5 minutes uses nothing.
 
-## ESP32: build and flash the display
+## ESP32: install the display firmware
+
+### From your browser
+
+The [web installer](https://g0kad.github.io/KIPCast/) flashes the latest release from Chrome or Edge over USB, with nothing to install. The images are also attached to each [GitHub release](https://github.com/g0kad/KIPCast/releases), to flash at offset 0x0 with `esptool`.
+
+### The setup page
+
+The firmware has no WiFi details built in. The first time it starts, the screen shows **KIPCast setup** and opens its own WiFi network, `KIPCast-` followed by the last four characters of its MAC address. Join it on a phone and the setup page opens; if it doesn't, browse to `http://192.168.4.1`. It asks for:
+
+| Setting | Notes |
+|---|---|
+| WiFi network and password | The boat's WiFi. The page lists the networks the screen can see. |
+| Display id | Letters, digits, `-` and `_`. Each id gets its own KIP on the Pi, and screens with the same id show the same thing. |
+| Signal K server | Leave blank to find the Signal K server on the network (it announces itself over mDNS). Or enter the Pi's IP address or name. |
+
+After saving, the screen restarts and connects. The settings are kept when the firmware is updated, unless you erase the flash.
+
+To change the settings later, touch and hold the screen for two seconds while it shows **Starting** (for a couple of seconds after power-on) or any other status message. In setup, tapping the screen leaves without changes, and setup closes itself after 10 minutes.
+
+### Building it yourself
 
 Supported boards, each with its own PlatformIO environment:
 
@@ -142,20 +169,20 @@ Supported boards, each with its own PlatformIO environment:
 Both have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
 
 1. Install [PlatformIO](https://platformio.org/). The project uses the community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform, because ESP32_Display_Panel v1.x needs Arduino core 3.x and the official platform is still on 2.x. PlatformIO downloads it automatically.
-2. Set up your WiFi details:
+2. Optionally, build your details in so a freshly flashed screen skips the setup page:
    ```bash
    cd kipcast-display/include
    cp secrets.example.h secrets.h          # secrets.h is ignored by git
    ```
-   Edit `secrets.h` and fill in your SSID, password and `DISPLAY_ID` (a different id for each screen). If you build for both boards, `secrets.example.h` shows how to give each its own id.
-3. In [`include/config.h`](kipcast-display/include/config.h), set `KIPCAST_HOST` to the Pi's address. An IP address is the most reliable; a `.local` name is looked up over mDNS.
-4. Build and flash over the ESP32's native USB. On the 7" that's the USB-C port marked **USB**; the 4" has only one USB-C port.
+   Edit `secrets.h` and fill in your SSID, password and `DISPLAY_ID` (a different id for each screen), and `KIPCAST_HOST` if the screen shouldn't find the Pi by itself. If you build for both boards, `secrets.example.h` shows how to give each its own id. Anything saved on the setup page takes priority; `pio run -t erase` clears it.
+3. Build and flash over the ESP32's native USB. On the 7" that's the USB-C port marked **USB**; the 4" has only one USB-C port.
    ```bash
    cd kipcast-display
    pio run -e kipcast-display -t upload        # 7"
    pio run -e kipcast-display-4in -t upload    # 4"
    pio device monitor
    ```
+   Each build also writes `firmware.factory.bin`, the single image that the web installer uses.
 
 Each board's panel config is in `include/boards/<board>/esp_panel_board_custom_conf.h`. The 7" config comes from Waveshare's `09_lvgl_v8_demo` example, and the 4" config from Waveshare's `esp32_s3_touch_lcd_4` board support package (both Apache-2.0). The build may warn that a config file is in an older format than the library expects. The newer settings it lacks don't apply to these boards, so the warning can be ignored.
 
@@ -167,9 +194,12 @@ Each board's panel config is in `include/boards/<board>/esp_panel_board_custom_c
 
 | Screen | Meaning |
 |---|---|
-| Dark blue | Joining WiFi |
-| Dark amber | WiFi up, trying to reach KIPCast on the Pi |
+| Green, **KIPCast setup** | The setup page is open |
+| Blue, **Starting** or **Joining WiFi** | Joining WiFi |
+| Amber, **Looking for KIPCast** | WiFi up, trying to reach KIPCast on the Pi |
 | Dashboard | Connected |
+
+If it can't join the WiFi or find the Pi, the screen says so and suggests what to check.
 
 The serial monitor (115200 baud) prints each step, plus frame size and decode time every 50 frames.
 
@@ -221,7 +251,7 @@ The ports are fixed at 3050 and 3051 in this mode, so stop the plugin first.
 
 ## Licence
 
-MIT. `kipcast-display/include/esp_panel_board_custom_conf.h` is Apache-2.0 (Espressif Systems / Waveshare).
+MIT. The board configs in `kipcast-display/include/boards/` are Apache-2.0 (Espressif Systems / Waveshare).
 
 ### Tests
 

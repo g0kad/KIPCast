@@ -62,6 +62,8 @@
   .custom[hidden] { display: none; }
   .msg { min-height: 1.5em; margin-top: 10px; font-size: 14px; color: var(--bad); }
   .note { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
+  ol.steps { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; }
+  ol.steps li::marker { color: var(--dim); }
   code { background: #1a2027; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 
   @media (max-width: 620px) {
@@ -81,6 +83,18 @@
   <section class="panel" aria-labelledby="known">
     <h2 id="known">Displays</h2>
     <div id="list" aria-live="polite"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section class="panel" aria-labelledby="howto">
+    <h2 id="howto">Setting up a new screen size</h2>
+    <ol class="steps">
+      <li>In <b>Security → Users</b>, create a Signal K user for the size, for example <code>kip480</code>.</li>
+      <li>On a computer, open KIP in an ordinary browser, log in as that user and build the dashboards there.
+        It's much easier than editing on the touchscreen.</li>
+      <li>Click <b>Open</b> for the display above and log its KIP in as the same user. The dashboards load from Signal K.</li>
+      <li>With the screen in view, resize and move widgets in the viewer. It's drawn at the screen's exact size and
+        changes show on the screen straight away.</li>
+    </ol>
   </section>
 
   <section class="panel" aria-labelledby="add">

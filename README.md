@@ -87,11 +87,22 @@ So to give screens of different sizes their own dashboards, the simplest approac
 
 KIP's own profiles are another way to keep layouts apart within one user.
 
+### Recommended workflow for a new screen size
+
+Editing KIP's layout on the touchscreen itself is fiddly, so build the dashboards on a computer and use the screen only to check the result:
+
+1. **Create a Signal K user for the screen size.** In **Security → Users**, add a user such as `kip480` for the 4" screens or `kip800` for the 7" ones.
+2. **Build the dashboards in an ordinary browser.** On a computer, open KIP (`http://<pi>:3000/@mxtommy/kip/`), log in as that user, and add the dashboards and widgets and choose their Signal K paths. With a full-size window, mouse and keyboard this is much quicker than on the screen. A private window keeps this login separate from the one you normally use KIP with.
+3. **Log the display in as the same user.** In **Webapps → KIPCast**, click **Open** for the display and log its KIP in as that user. The dashboards you just built load from the Signal K server.
+4. **Fine-tune while watching the screen.** The viewer is drawn at the screen's exact size and everything you do in it appears on the screen straight away. Resize and move the widgets in the viewer until they read well on the screen itself.
+
+Any other screen of the same size can then be logged in as the same user and gets the same dashboards.
+
 ### Designing dashboards for a small screen
 
 A 480×480 screen has a little over half the pixels of an 800×480 one, and it's square. Some tips:
 
-- Build separate dashboards for it rather than reusing the 7" ones. Always design in the viewer opened from the Displays page, so you see exactly what the screen will show.
+- Build separate dashboards for it rather than reusing the 7" ones. Do the final layout in the viewer opened from the Displays page, so you see exactly what the screen will show.
 - Use fewer, larger widgets, for example a 2×2 grid of the numbers you read most at the helm.
 - Keep touch targets large. A fingertip covers far more of a 4" screen than of a 7" one.
 - Swiping between dashboards works the same on every size, so several simple dashboards beat one crowded one.

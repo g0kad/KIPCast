@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (2026-09-25)
+
+- The App Store shows the KIPCast icon. It looks for it at the package root, while the Webapps page looks in `public/`, so the package now has it in both.
+- Tested on Linux, Linux arm64, macOS and Windows with Node 22 and 24 by Signal K's plugin CI; the results show in the App Store.
+- No firmware changes: screens on firmware 0.3.0 are up to date.
+
 ## 0.3.0 (2026-09-25)
 
 Update the display firmware too: this plugin works with older firmware, but the fixes below are in the firmware.

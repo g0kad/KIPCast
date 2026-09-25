@@ -5,6 +5,10 @@
 # hand (Actions > SignalK Plugin CI > Run workflow) to check a commit
 # before publishing, optionally with the Signal K integration test.
 # Usage: https://github.com/SignalK/signalk-server/blob/master/.github/workflows/plugin-ci.yml
+#
+# The empty package-lock.json at the repository root is only for this: the
+# shared workflow turns on npm caching when it finds a lock file anywhere,
+# but setup-node then looks for one at the root, and fails without it.
 
 name: SignalK Plugin CI
 

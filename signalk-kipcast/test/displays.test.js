@@ -88,3 +88,41 @@ test('without a reported size, use the remembered one, else the default', (t) =>
   assert.deepEqual(cast.sizeFor('helm', client('viewer'), 0, 0), [480, 480]);
   assert.deepEqual(cast.sizeFor('other', client('screen'), 0, 0), [1024, 600]);
 });
+
+test('a screen\'s firmware version is remembered and compared with the latest', async (t) => {
+  const { cast, client, dir } = makeCast(t, { latestFirmware: '0.3.0' });
+  const hello = (id, fw) => {
+    cast.sizeFor(id, client('screen'), 480, 480);
+    cast.rememberFirmware(id, fw);
+  };
+  hello('current', '0.3.0');
+  hello('old', '0.2.9');
+  hello('ancient', undefined);   // firmware from before versions were reported
+  hello('newer', '0.10.0');
+  hello('dev', 'dev');
+  hello('junk', 'not a version!');
+  cast.addDisplay('manual', 800, 480);
+  const byId = Object.fromEntries(cast.listDisplays().map((d) => [d.id, d]));
+  assert.deepEqual(
+    Object.entries(byId).map(([id, d]) => [id, d.firmware, d.firmwareOutdated]),
+    [['ancient', '', true], ['current', '0.3.0', false], ['dev', 'dev', false], ['junk', '', true],
+      ['manual', null, false], ['newer', '0.10.0', false], ['old', '0.2.9', true]],
+  );
+
+  // Kept across a restart, and when the screen reports its size again.
+  cast.sizeFor('old', client('screen'), 480, 480);
+  await cast.stop();
+  const again = new KIPCast({ displaysFile: path.join(dir, 'displays.json'), latestFirmware: '0.3.0' });
+  assert.equal(again.listDisplays().find((d) => d.id === 'old').firmware, '0.2.9');
+});
+
+test('the plugin status names screens with old firmware', (t) => {
+  const { cast, client, statuses } = makeCast(t, { latestFirmware: '0.3.0' });
+  cast.sizeFor('helm', client('screen'), 480, 480);
+  cast.rememberFirmware('helm', '0.2.0');
+  cast.updateStatus();
+  assert.match(statuses.at(-1), /Firmware 0\.3\.0 is available for helm: https:\/\/g0kad\.github\.io\/KIPCast\//);
+  cast.rememberFirmware('helm', '0.3.0');
+  cast.updateStatus();
+  assert.doesNotMatch(statuses.at(-1), /Firmware/);
+});

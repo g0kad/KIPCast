@@ -30,13 +30,16 @@
     box-shadow: inset 0 1px 0 #2a323b, 0 12px 30px rgb(0 0 0 / .35); margin-bottom: 20px;
   }
   .row {
-    display: grid; grid-template-columns: minmax(0, 1.4fr) 110px minmax(0, 1.6fr) auto;
+    display: grid; grid-template-columns: minmax(0, 1.3fr) 90px 150px minmax(0, 1.5fr) 140px;
     gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line);
   }
   .row:first-of-type { border-top: 0; }
   .row.head { color: var(--dim); font-size: 13px; padding-top: 0; }
   .id { font-weight: 600; overflow-wrap: anywhere; }
   .size { font-variant-numeric: tabular-nums; }
+  .fw { font-size: 14px; font-variant-numeric: tabular-nums; }
+  .fw .unknown { color: var(--dim); }
+  .fw a { color: var(--warn); }
   .status { display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 14px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
   .dot.on { background: var(--ok); }
@@ -70,6 +73,7 @@
     .row { grid-template-columns: 1fr auto; row-gap: 4px; }
     .row.head { display: none; }
     .size { justify-self: end; }
+    .fw { grid-column: 1 / -1; }
     .actions { grid-column: 1 / -1; justify-content: flex-start; }
   }
 </style>
@@ -83,6 +87,7 @@
   <section class="panel" aria-labelledby="known">
     <h2 id="known">Displays</h2>
     <div id="list" aria-live="polite"><div class="empty">Loading…</div></div>
+    <p class="note" id="fwNote" hidden></p>
   </section>
 
   <section class="panel" aria-labelledby="howto">
@@ -129,7 +134,10 @@
   const list = document.getElementById('list');
   const form = document.getElementById('addForm');
   const msg = document.getElementById('msg');
+  const fwNote = document.getElementById('fwNote');
   let viewerPort = 3050;
+  let latestFirmware = null;
+  let installer = '';
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -150,17 +158,39 @@
     return `<span class="dot"></span>${seen}`;
   }
 
+  // The firmware a screen last reported, and a link when there's a newer one.
+  function firmware(d) {
+    if (d.firmware === null) {
+      return d.source === 'screen'
+        ? '<span class="unknown" title="Shown when the screen next connects">Not known yet</span>'
+        : '<span class="unknown">—</span>';
+    }
+    const version = d.firmware === '' ? `Before ${esc(latestFirmware)}` : esc(d.firmware);
+    if (!d.firmwareOutdated) return version;
+    return `${version} · <a href="${esc(installer)}" target="_blank" rel="noopener">Update to ${esc(latestFirmware)}</a>`;
+  }
+  function renderNote(displays) {
+    const old = displays.filter((d) => d.firmwareOutdated).map((d) => d.id);
+    fwNote.hidden = !old.length;
+    if (!old.length) return;
+    fwNote.innerHTML = `Display firmware ${esc(latestFirmware)} is available for ${old.map(esc).join(', ')}. ` +
+      `To install it, plug the screen into a computer with a USB cable and open the ` +
+      `<a href="${esc(installer)}" target="_blank" rel="noopener">web installer</a> in Chrome or Edge. ` +
+      'The screen keeps its WiFi details and display id.';
+  }
   function render(displays) {
+    renderNote(displays);
     if (!displays.length) {
       list.innerHTML = '<div class="empty">No displays yet. Screens appear here when they first connect, or add one below.</div>';
       return;
     }
     const viewer = `${location.protocol}//${location.hostname}:${viewerPort}/`;
-    list.innerHTML = '<div class="row head"><span>Display</span><span>Size</span><span>Status</span><span></span></div>' +
+    list.innerHTML = '<div class="row head"><span>Display</span><span>Size</span><span>Firmware</span><span>Status</span><span></span></div>' +
       displays.map((d) => `
         <div class="row">
           <span class="id">${esc(d.id)}</span>
           <span class="size">${d.width}×${d.height}</span>
+          <span class="fw">${firmware(d)}</span>
           <span class="status">${status(d)}</span>
           <span class="actions">
             <a class="btn primary" href="${viewer}?id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener" data-open>Open</a>
@@ -179,6 +209,8 @@
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
       const data = await r.json();
       viewerPort = data.viewerPort;
+      latestFirmware = data.latestFirmware;
+      installer = data.firmwareInstaller;
       render(data.displays);
     } catch (e) {
       list.innerHTML = `<div class="empty">Couldn’t load displays: ${esc(e.message)}. Is the KIPCast plugin enabled?</div>`;

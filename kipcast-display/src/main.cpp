@@ -18,6 +18,7 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <esp_mac.h>
+#include <lwip/sockets.h>
 #include <JPEGDEC.h>
 #include <esp_display_panel.hpp>
 #include "config.h"
@@ -34,11 +35,15 @@ static WiFiClient server;  // not "link": clashes with POSIX link()
 
 static uint8_t *jpegBuf = nullptr;
 
+static const char *const FW_VERSION = KIPCAST_VERSION[0] ? KIPCAST_VERSION : "dev";
+
 // Settings saved on the board by the setup page. secrets.h, if present,
 // supplies the defaults.
 static struct {
   String ssid, pass, host, id;
 } cfg;
+
+static Preferences prefs;
 
 static void runSetup();
 static bool readTouch(int &x, int &y);
@@ -145,7 +150,8 @@ static void showScreen(uint16_t bg, const String &heading, std::initializer_list
 }
 
 static void showStatus(uint16_t bg, const String &status, const String &detail = "") {
-  showScreen(bg, "KIPCast", {"Display: " + cfg.id, status, detail}, "Touch and hold for setup");
+  showScreen(bg, "KIPCast", {"Display: " + cfg.id, status, detail},
+             "Touch and hold for setup - firmware " + String(FW_VERSION));
 }
 
 #ifdef KIPCAST_BOARD_LCD4
@@ -242,18 +248,23 @@ static bool readTouch(int &x, int &y) {
 }
 
 // True once the screen has been touched continuously for SETUP_HOLD_MS.
-// Only used on the status screens, never while KIP is showing.
+// Only used on the status screens, never while KIP is showing. Only a lift
+// seen while polling ends a hold: looking for the server blocks for seconds
+// between polls, and a finger held down through that still counts.
 static bool touchHeld() {
   if (!touch) return false;
-  static uint32_t since = 0, lastSeen = 0;
+  static uint32_t since = 0, liftedAt = 0, lastPoll = 0;
   int x, y;
   uint32_t now = millis();
+  if (now - lastPoll > 8000) since = liftedAt = 0;  // not polled for a while: start afresh
+  lastPoll = now;
   if (readTouch(x, y)) {
-    if (!since || now - lastSeen > 200) since = now;
-    lastSeen = now;
+    if (!since) since = now;
+    liftedAt = 0;
     return now - since >= SETUP_HOLD_MS;
   }
-  if (now - lastSeen > 200) since = 0;
+  if (!liftedAt) liftedAt = now;
+  else if (now - liftedAt > 200) since = 0;
   return false;
 }
 
@@ -303,21 +314,55 @@ static void ensureWifi() {
   MDNS.begin(hostName().c_str());
 }
 
+// The last server that answered, saved on the board. Tried first: Signal K's
+// mDNS announcement can go quiet (it stops answering if the Pi's network
+// drops and comes back) and is slow to return after a restart.
+static IPAddress lastIp;
+static String lastName;  // its mDNS host name, in case its address changes
+
+static void loadLastServer() {
+  prefs.begin("kipcast", true);
+  lastIp.fromString(prefs.getString("lastip", ""));
+  lastName = prefs.getString("lastname", "");
+  prefs.end();
+}
+
+static void saveLastServer(const IPAddress &ip, const String &name) {
+  if (ip == lastIp && (name.isEmpty() || name == lastName)) return;  // spare the flash
+  lastIp = ip;
+  if (name.length()) lastName = name;
+  prefs.begin("kipcast", false);
+  prefs.putString("lastip", lastIp.toString());
+  prefs.putString("lastname", lastName);
+  prefs.end();
+}
+
 // Finds the Pi: the configured host, or else the Signal K server announcing
-// itself on the network. `where` names it for the status screen.
-static bool resolveHost(IPAddress &ip, String &where) {
+// itself on the network. `where` names it for the status screen, `name` is
+// its mDNS host name when known.
+static bool resolveHost(IPAddress &ip, String &where, String &name) {
   const String &host = cfg.host;
   if (host.isEmpty()) {
     where = "the Signal K server";
-    if (MDNS.queryService("signalk-http", "tcp") <= 0) return false;
-    ip = MDNS.address(0);
+    if (MDNS.queryService("signalk-http", "tcp") > 0) {
+      ip = MDNS.address(0);
+      name = MDNS.hostname(0);
+    } else if (lastName.length()) {
+      // Signal K isn't announcing, but the Pi itself may still answer to its name.
+      ip = MDNS.queryHost(lastName, 1500);
+      if (ip == IPAddress(0, 0, 0, 0)) return false;
+      name = lastName;
+    } else {
+      return false;
+    }
     where = ip.toString();
     return true;
   }
   where = host;
   if (ip.fromString(host)) return true;
   if (host.endsWith(".local")) {
-    ip = MDNS.queryHost(host.substring(0, host.length() - 6), 2000);
+    name = host.substring(0, host.length() - 6);
+    ip = MDNS.queryHost(name, 2000);
     return ip != IPAddress(0, 0, 0, 0);
   }
   return WiFi.hostByName(host.c_str(), ip) == 1;
@@ -337,6 +382,10 @@ static void sendLine(const char *s) {
   lastTx = millis();
 }
 
+static bool connectTo(const IPAddress &ip) {
+  return server.connect(ip, KIPCAST_PORT, 1500);  // plenty on a LAN
+}
+
 static void ensureLink() {
   if (server.connected()) return;
   ensureWifi();
@@ -345,9 +394,20 @@ static void ensureLink() {
   for (int tries = 1; !server.connected(); tries++) {
     ensureWifi();
     IPAddress ip;
-    String where;
-    bool found = resolveHost(ip, where);
-    if (found && server.connect(ip, KIPCAST_PORT, 3000)) break;
+    String where, name;
+    bool found = false;
+    bool fixedIp = ip.fromString(cfg.host);
+    if (!fixedIp && lastIp != IPAddress(0, 0, 0, 0) && connectTo(lastIp)) break;
+    found = resolveHost(ip, where, name);
+    bool justTried = !fixedIp && ip == lastIp;
+    if (found && !justTried && connectTo(ip)) {
+      if (!fixedIp) saveLastServer(ip, name);
+      break;
+    }
+    if (!found && lastIp != IPAddress(0, 0, 0, 0) && !fixedIp) {
+      found = true;  // we know where it was; it just isn't answering yet
+      where = lastIp.toString();
+    }
     Serial.printf("KIPCast: %s %s, retrying\n", where.c_str(), found ? "not answering" : "not found");
     if (tries == 3) {
       if (!found)
@@ -356,16 +416,31 @@ static void ensureLink() {
                                       : "Touch and hold to change the address.");
       else
         showStatus(COL_SERVER, "No answer from KIPCast at " + where,
-                   "Is the KIPCast plugin enabled in Signal K?");
+                   "Is Signal K running, with the KIPCast plugin enabled? Touch and hold for setup.");
     }
     waitOrSetup(2000);
   }
   server.setNoDelay(true);
   rxState = RX_HEADER; rxHdrGot = 0;
-  char hello[64];
-  snprintf(hello, sizeof hello, "H %s %d %d", cfg.id.c_str(), SCREEN_W, SCREEN_H);
+  char hello[96];
+  snprintf(hello, sizeof hello, "H %s %d %d %s", cfg.id.c_str(), SCREEN_W, SCREEN_H, FW_VERSION);
   sendLine(hello);
   Serial.println("KIPCast: connected");
+}
+
+// WiFiClient::connected() misses the Pi closing the connection (as it does
+// when Signal K restarts); left alone, only a failed keepalive write shows
+// it, many seconds later. Peek at the socket instead.
+static void checkLink() {
+  static uint32_t lastCheck = 0;
+  if (millis() - lastCheck < 250 || !server.connected() || server.available() > 0) return;
+  lastCheck = millis();
+  uint8_t b;
+  int n = recv(server.fd(), &b, 1, MSG_PEEK | MSG_DONTWAIT);
+  if (n == 0 || (n < 0 && errno != EWOULDBLOCK && errno != EAGAIN) || WiFi.status() != WL_CONNECTED) {
+    Serial.println("KIPCast: connection closed");
+    server.stop();
+  }
 }
 
 static void showFrame(uint32_t len) {
@@ -445,8 +520,6 @@ static void pollTouch() {
 /* Settings and setup page                                             */
 /* ------------------------------------------------------------------ */
 
-static Preferences prefs;
-
 // Same rule as the plugin's display ids.
 static bool validId(const String &id) {
   if (id.isEmpty() || id.length() > 32) return false;
@@ -505,7 +578,8 @@ static bool saved = false;
 
 static void sendForm(const String &error = "") {
   String p = FPSTR(PAGE_HEAD);
-  p += "<h1>KIPCast setup</h1><p>This screen is " + String(SCREEN_W) + "&times;" + String(SCREEN_H) + ".</p>";
+  p += "<h1>KIPCast setup</h1><p>This screen is " + String(SCREEN_W) + "&times;" + String(SCREEN_H) +
+       ", with firmware " + String(FW_VERSION) + ".</p>";
   if (error.length()) p += "<p class=err>" + htmlEscape(error) + "</p>";
   p += "<form method=post action=/save>";
   p += "<label for=ssid>WiFi network</label>";
@@ -535,6 +609,8 @@ static void handleSave() {
   prefs.putString("pass", pass);
   prefs.putString("id", id);
   prefs.putString("host", host);
+  prefs.remove("lastip");  // the server may have changed
+  prefs.remove("lastname");
   prefs.end();
   Serial.printf("setup: saved (WiFi %s, id %s, server %s)\n", ssid.c_str(), id.c_str(), host.length() ? host.c_str() : "auto");
   String p = FPSTR(PAGE_HEAD);
@@ -612,11 +688,12 @@ void setup() {
   // startup messages are lost.
   while (!Serial && millis() < 3000) delay(10);
   delay(200);
-  Serial.println("KIPCast display starting");
+  Serial.printf("KIPCast display starting, firmware %s\n", FW_VERSION);
   jpegBuf = (uint8_t *)heap_caps_malloc(MAX_JPEG_BYTES, MALLOC_CAP_SPIRAM);
   if (!jpegBuf) { Serial.println("PSRAM alloc failed: is OPI PSRAM enabled?"); while (true) delay(1000); }
   initDisplay();
   loadSettings();
+  loadLastServer();
   Serial.printf("display id %s, server %s\n", cfg.id.c_str(), cfg.host.length() ? cfg.host.c_str() : "auto");
   if (cfg.ssid.isEmpty()) runSetup();
   // A moment to touch and hold for setup before anything else happens.
@@ -627,6 +704,7 @@ void setup() {
 void loop() {
   ensureLink();
   pumpNetwork();
+  checkLink();
   pollTouch();
   if (millis() - lastTx > 10000) sendLine("P");  // lets both ends notice a dead link
   delay(1);

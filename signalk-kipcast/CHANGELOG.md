@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 (2026-09-25)
+
+Update the display firmware too: this plugin works with older firmware, but the fixes below are in the firmware.
+
+- Screens report their firmware version. **Webapps → KIPCast** shows it for each screen, with a link to the web installer when a newer one is available, and the plugin status names screens that need updating.
+- Screens reconnect within a few seconds after Signal K restarts, instead of about a minute. They notice straight away when the Pi closes the connection.
+- Screens remember the address of the last server they connected to. They no longer get stuck on "Can't find the Signal K server" after the WiFi router restarts, when Signal K can stop answering on the network until it is restarted itself.
+- Touch and hold for setup now works on the "Looking for KIPCast" screens. The network search used to interrupt the hold.
+- Screens show their firmware version on their status screens and setup page.
+
 ## 0.2.0 (2026-09-24)
 
 - The browser viewer now uses the Signal K login. **Open** on the Displays page hands it a one-time pass, swapped for a cookie that lasts 12 hours. Visiting port 3050 any other way shows how to get in. Can be switched off in the plugin settings.

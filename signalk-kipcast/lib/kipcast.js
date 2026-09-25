@@ -19,10 +19,14 @@
  * swapped for a cookie, which the page, /displays and /ws then require.
  *
  * Each display's size is remembered in displaysFile, so the viewer opens a
- * display at the right size even while the screen itself is off.
+ * display at the right size even while the screen itself is off. So is the
+ * firmware version a screen reports, so an out-of-date screen can be flagged
+ * against latestFirmware (the firmware released with this plugin version).
  *
  * Upstream line protocol (same for TCP and WS):
- *   H <id> <width> <height>   hello (TCP only; WS uses ?id=)
+ *   H <id> <width> <height> [firmware]
+ *                             hello (TCP only; WS uses ?id=). Screens older
+ *                             than firmware 0.3.0 send no version.
  *   A                         ready for next frame (flow control)
  *   T <D|M|U> <x> <y>         touch down / move / up, in display pixels
  *   I <text>                  type text; <text> is encodeURIComponent()-encoded
@@ -42,6 +46,10 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const puppeteer = require('puppeteer-core');
+const pkg = require('../package.json');
+
+// Where users get new display firmware.
+const FIRMWARE_INSTALLER = 'https://g0kad.github.io/KIPCast/';
 
 const DEFAULTS = {
   url: 'http://localhost:3000/@mxtommy/kip/',
@@ -58,6 +66,7 @@ const DEFAULTS = {
   displaysFile: path.join(__dirname, '..', 'displays.json'),     // remembered display sizes
   idleCloseSec: 300,         // close a display's Chromium this long after it leaves
   viewerAuth: false,         // viewer port needs a pass from issueViewerPass()
+  latestFirmware: (pkg.kipcast && pkg.kipcast.firmware) || null,  // released with this plugin version
   viewerPassSec: 60,         // how long a pass is valid for (used once)
   viewerCookieSec: 12 * 3600, // how long the cookie a pass buys lasts
 };
@@ -331,8 +340,27 @@ class KIPCast {
   // source: 'screen' (reported by the ESP32 itself), 'manual' (added on the
   // Displays page) or 'viewer' (first opened in the viewer with ?w=&h=).
   rememberDisplay(id, width, height, source) {
-    this.displays.set(id, { width, height, source, lastSeen: new Date().toISOString() });
+    const { firmware } = this.displays.get(id) || {};
+    this.displays.set(id, { width, height, source, lastSeen: new Date().toISOString(), firmware });
     this.saveDisplays();
+  }
+
+  // What a screen's hello said about its firmware: its version, or '' for a
+  // screen too old to say. (undefined: not heard from since this was added.)
+  rememberFirmware(id, reported) {
+    const d = this.displays.get(id);
+    if (!d) return;
+    d.firmware = cleanVersion(reported);
+    this.saveDisplays();
+  }
+
+  // Whether a display's firmware is older than the one released with this
+  // plugin. Unknown and development versions aren't flagged.
+  firmwareOutdated(d) {
+    const latest = this.opts.latestFirmware;
+    if (!latest || d.source !== 'screen' || d.firmware === undefined) return false;
+    if (d.firmware === '') return true;
+    return isRelease(d.firmware) && compareVersions(d.firmware, latest) < 0;
   }
 
   touchDisplay(id) {
@@ -358,6 +386,8 @@ class KIPCast {
         open: !!s,
         screens: clients.filter((c) => c.kind === 'screen').length,
         viewers: clients.filter((c) => c.kind === 'viewer').length,
+        firmware: d.firmware === undefined ? null : d.firmware,
+        firmwareOutdated: this.firmwareOutdated(d),
       };
     });
   }
@@ -460,6 +490,7 @@ class KIPCast {
       case 'H': {
         const id = sanitiseId(parts[1]);
         const [w, h] = this.sizeFor(id, client, validSize(parts[2]), validSize(parts[3]));
+        if (client.kind === 'screen') this.rememberFirmware(id, parts[4]);
         if (client.session) client.dispose();
         let s;
         try {
@@ -524,7 +555,11 @@ class KIPCast {
       viewers += kinds.filter((k) => k === 'viewer').length;
     }
     const v = viewers ? ` (${viewers} viewer${viewers > 1 ? 's' : ''})` : '';
-    const msg = screens.length ? `Connected: ${screens.sort().join(', ')}${v}` : `No displays connected${v}`;
+    let msg = screens.length ? `Connected: ${screens.sort().join(', ')}${v}` : `No displays connected${v}`;
+    const outdated = [...this.displays].filter(([, d]) => this.firmwareOutdated(d)).map(([id]) => id);
+    if (outdated.length) {
+      msg += `. Firmware ${this.opts.latestFirmware} is available for ${outdated.sort().join(', ')}: ${FIRMWARE_INSTALLER}`;
+    }
     const missing = this.chromiumMissing();
     this.status(missing ? `${missing} ${msg}` : msg);
   }
@@ -735,4 +770,24 @@ function sanitiseId(id) {
   return String(id || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'default';
 }
 
-module.exports = { KIPCast, DEFAULTS, Client, sanitiseId, validSize, keyInfo };
+// A reported firmware version, or '' if missing or not plausible.
+function cleanVersion(v) {
+  return /^[0-9A-Za-z.+-]{1,32}$/.test(v || '') ? v : '';
+}
+
+// A release version such as 0.3.0, as opposed to a development build.
+function isRelease(v) {
+  return /^\d+\.\d+\.\d+$/.test(v);
+}
+
+// Compares two release versions: negative if a is older, 0 if the same.
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  return 0;
+}
+
+module.exports = {
+  KIPCast, DEFAULTS, Client, FIRMWARE_INSTALLER,
+  sanitiseId, validSize, keyInfo, cleanVersion, isRelease, compareVersions,
+};

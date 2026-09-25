@@ -29,6 +29,12 @@
   #define DISPLAY_ID   ""
 #endif
 
+// Firmware version, reported to the plugin so it can say when there's a newer
+// one. Set by the release build (see platformio.ini); blank means "dev".
+#ifndef KIPCAST_VERSION
+  #define KIPCAST_VERSION ""
+#endif
+
 // ---- Panel ----
 // Set per board in platformio.ini; these are the 7" defaults.
 #ifndef SCREEN_W

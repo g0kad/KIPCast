@@ -38,6 +38,23 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      # The firmware reports its version to the plugin, which flags screens
+      # older than its kipcast.firmware. A release tag must match that, or
+      # the plugin would nag about (or miss) this release.
+      - name: Firmware version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+            WANT=$(node -p "require('./signalk-kipcast/package.json').kipcast.firmware")
+            if [[ "$V" != "$WANT" ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME, but signalk-kipcast/package.json has kipcast.firmware $WANT"
+              exit 1
+            fi
+          else
+            V="dev-${GITHUB_SHA::7}"
+          fi
+          echo "KIPCAST_VERSION=$V" >> "$GITHUB_ENV"
+
       # No secrets.h here: the images have no WiFi details or display id
       # built in, so each screen opens its setup page on first boot.
       - name: Build

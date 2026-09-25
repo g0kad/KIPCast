@@ -156,6 +156,12 @@ A display's Chromium is shut down 5 minutes after its last screen disconnects, a
 
 The [web installer](https://g0kad.github.io/KIPCast/) flashes the latest release from Chrome or Edge over USB, with nothing to install. The images are also attached to each [GitHub release](https://github.com/g0kad/KIPCast/releases), to flash at offset 0x0 with `esptool`.
 
+### Updating
+
+Each screen tells the plugin its firmware version when it connects, and each plugin release knows the firmware released with it. After updating the plugin from the App Store, **Webapps → KIPCast** shows each screen's firmware and flags any that are out of date, and the plugin's status line in **Server → Plugin Config** names them. To update a screen, plug it into a computer and run the web installer again. It keeps the screen's WiFi details and display id.
+
+A screen shows its firmware version at the bottom of its status screens and on its setup page. Firmware from before 0.3.0 doesn't report a version, and is listed as "Before 0.3.0".
+
 ### The setup page
 
 The firmware has no WiFi details built in. The first time it starts, the screen shows **KIPCast setup** and opens its own WiFi network, `KIPCast-` followed by the last four characters of its MAC address. Join it on a phone and the setup page opens; if it doesn't, browse to `http://192.168.4.1`. It asks for:
@@ -164,7 +170,7 @@ The firmware has no WiFi details built in. The first time it starts, the screen 
 |---|---|
 | WiFi network and password | The boat's WiFi. The page lists the networks the screen can see. |
 | Display id | Letters, digits, `-` and `_`. Each id gets its own KIP on the Pi, and screens with the same id show the same thing. |
-| Signal K server | Leave blank to find the Signal K server on the network (it announces itself over mDNS). Or enter the Pi's IP address or name. |
+| Signal K server | Leave blank to find the Signal K server on the network (it announces itself over mDNS). Or enter the Pi's IP address or name. The screen remembers the address of the last server it connected to and tries that first, so it reconnects quickly and doesn't depend on Signal K's announcements, which can stop after the Pi's network drops. |
 
 After saving, the screen restarts and connects. The settings are kept when the firmware is updated, unless you erase the flash.
 
@@ -197,6 +203,8 @@ Both have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
    ```
    Each build also writes `firmware.factory.bin`, the single image that the web installer uses.
 
+   Your own builds report their firmware version as `dev`, which the plugin never flags as out of date. To build as a release version, set `KIPCAST_VERSION` first, for example `KIPCAST_VERSION=0.3.0 pio run`. The release build sets it from the git tag, which must match `kipcast.firmware` in `signalk-kipcast/package.json`.
+
 Each board's panel config is in `include/boards/<board>/esp_panel_board_custom_conf.h`. The 7" config comes from Waveshare's `09_lvgl_v8_demo` example, and the 4" config from Waveshare's `esp32_s3_touch_lcd_4` board support package (both Apache-2.0). The build may warn that a config file is in an older format than the library expects. The newer settings it lacks don't apply to these boards, so the warning can be ignored.
 
 **7" quirks:**
@@ -224,7 +232,7 @@ This is the same for the ESP32 (TCP) and the browser viewer (WebSocket), so othe
 
 | Line | Meaning |
 |---|---|
-| `H <id> <width> <height>` | Hello. Must be the first line on TCP. The browser viewer passes the id as `/ws?id=` instead, and optionally a size as `&w=&h=`. |
+| `H <id> <width> <height> [firmware]` | Hello. Must be the first line on TCP. The firmware version (from 0.3.0) lets the plugin flag out-of-date screens. The browser viewer passes the id as `/ws?id=` instead, and optionally a size as `&w=&h=`. |
 | `A` | Ready for the next frame. The Pi sends nothing new until it gets this, so a slow display never builds up a backlog. |
 | `T D <x> <y>` / `T M <x> <y>` / `T U <x> <y>` | Touch down / move / up, in display pixels. |
 | `I <text>` | Type text into the focused field. `<text>` is URL-encoded (`encodeURIComponent`). |

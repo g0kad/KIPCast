@@ -1,6 +1,6 @@
 {
   "name": "signalk-kipcast",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Cast live KIP dashboards to low-cost ESP32 touchscreens, with touch passed back to KIP",
   "main": "index.js",
   "files": [
@@ -42,6 +42,9 @@
   "dependencies": {
     "puppeteer-core": "^25.11.0",
     "ws": "^8.18.0"
+  },
+  "kipcast": {
+    "firmware": "0.3.0"
   },
   "signalk": {
     "displayName": "KIPCast",

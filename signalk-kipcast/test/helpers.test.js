@@ -40,3 +40,22 @@ test('keyInfo maps single letters and digits', () => {
 test('keyInfo ignores anything else', () => {
   for (const k of ['', 'ab', 'F13', '%', 'toString']) assert.equal(keyInfo(k), null, k);
 });
+
+test('firmware versions', () => {
+  const { cleanVersion, isRelease, compareVersions } = require('../lib/kipcast');
+  assert.equal(cleanVersion('0.3.0'), '0.3.0');
+  assert.equal(cleanVersion('dev-abc1234'), 'dev-abc1234');
+  assert.equal(cleanVersion(undefined), '');
+  assert.equal(cleanVersion('<script>'), '');
+  assert.ok(isRelease('1.2.3'));
+  assert.ok(!isRelease('dev'));
+  assert.ok(!isRelease('1.2'));
+  assert.ok(compareVersions('0.2.9', '0.3.0') < 0);
+  assert.ok(compareVersions('0.10.0', '0.9.0') > 0);
+  assert.equal(compareVersions('1.0.0', '1.0.0'), 0);
+});
+
+test('the latest firmware comes from package.json', () => {
+  const { DEFAULTS } = require('../lib/kipcast');
+  assert.equal(DEFAULTS.latestFirmware, require('../package.json').kipcast.firmware);
+});

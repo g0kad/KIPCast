@@ -1,6 +1,6 @@
 'use strict';
 const path = require('path');
-const { KIPCast, DEFAULTS } = require('./lib/kipcast');
+const { KIPCast, DEFAULTS, FIRMWARE_INSTALLER } = require('./lib/kipcast');
 
 module.exports = function (app) {
   let cast = null;
@@ -55,6 +55,8 @@ module.exports = function (app) {
       res.json({
         viewerPort: cast.opts.httpPort,
         defaultSize: { width: cast.opts.width, height: cast.opts.height },
+        latestFirmware: cast.opts.latestFirmware,
+        firmwareInstaller: FIRMWARE_INSTALLER,
         displays: cast.listDisplays(),
       });
     });

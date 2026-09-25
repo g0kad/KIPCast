@@ -28,6 +28,8 @@ Each connected display has its own Chromium, which uses about 370 MB on a Pi 5. 
 2. Install the firmware on a screen with the [web installer](https://g0kad.github.io/KIPCast/), then give it your WiFi details and a display id on its setup page. It finds the Signal K server by itself.
 3. Open **Webapps → KIPCast**. The screen appears in the list once it connects.
 
+When a plugin update comes with new display firmware, **Webapps → KIPCast** and the plugin's status line say which screens need it. Update a screen by running the web installer again; it keeps its settings.
+
 ### Recommended workflow for a new screen size
 
 Editing KIP's layout on the touchscreen itself is fiddly, so build the dashboards on a computer and use the screen only to check the result:

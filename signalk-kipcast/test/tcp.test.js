@@ -41,10 +41,11 @@ test('an ESP32-style display over TCP', { skip }, async (t) => {
   await once(sock, 'connect');
   const nextFrame = frameReader(sock);
 
-  sock.write('H helm 480 480\n');
+  sock.write('H helm 480 480 0.3.0\n');
   await until(() => cast.browsers.length === 1 && cast.sessions.get('helm'));
   const { cdp, page } = cast.browsers[0];
   assert.equal(page.viewport.width, 480);
+  assert.equal(cast.listDisplays()[0].firmware, '0.3.0');
 
   const got = nextFrame();
   frame(cdp, Buffer.from([0xff, 0xd8, 1, 2, 3, 0xff, 0xd9]));

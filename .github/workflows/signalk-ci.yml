@@ -1,0 +1,30 @@
+# Signal K's shared plugin CI: tests the plugin on Linux (x64 and arm64),
+# macOS and Windows with Node 22 and 24. The App Store shows the results
+# for the commit each npm version was published from (its gitHead), so this
+# runs on every push to main, not only when the plugin changes. Run it by
+# hand (Actions > SignalK Plugin CI > Run workflow) to check a commit
+# before publishing, optionally with the Signal K integration test.
+# Usage: https://github.com/SignalK/signalk-server/blob/master/.github/workflows/plugin-ci.yml
+
+name: SignalK Plugin CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      enable-signalk-integration:
+        description: Start a Signal K server and install the plugin
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@master
+    with:
+      working-directory: signalk-kipcast
+      node-versions: '["22", "24"]'
+      # armv7 (Cerbo GX) runs Node 20; the plugin needs Node 22.12+.
+      enable-armv7: false
+      enable-signalk-integration: ${{ github.event_name == 'workflow_dispatch' && inputs.enable-signalk-integration }}

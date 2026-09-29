@@ -36,7 +36,7 @@
 #endif
 
 // ---- Panel ----
-// Set per board in platformio.ini; these are the 7" defaults.
+// Set per board in platformio.ini; these are the 7" and 4.3" defaults.
 #ifndef SCREEN_W
   #define SCREEN_W     800
   #define SCREEN_H     480

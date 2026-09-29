@@ -14,6 +14,8 @@
 // If you build for more than one board, give each its own id:
 #ifdef KIPCAST_BOARD_LCD4
   #define DISPLAY_ID   "helm"      // 4" (pio run -e kipcast-display-4in)
+#elif defined(KIPCAST_BOARD_LCD43)
+  #define DISPLAY_ID   "chart"     // 4.3" (pio run -e kipcast-display-43in)
 #else
   #define DISPLAY_ID   "saloon"    // 7" (pio run -e kipcast-display)
 #endif

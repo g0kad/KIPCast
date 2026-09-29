@@ -8,7 +8,7 @@ Put live [KIP](https://github.com/mxtommy/Kip) dashboards on low-cost ESP32 touc
   <img src="https://raw.githubusercontent.com/g0kad/KIPCast/main/signalk-kipcast/images/switches.jpeg" alt="Digital switches for the plotter, AIS and VHF" width="260">
 </p>
 
-This Signal K plugin runs KIP in headless Chromium on the server and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" (800×480) and the 4" (480×480). Touches on the screen are sent back to KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
+This Signal K plugin runs KIP in headless Chromium on the server and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" and 4.3" (800×480) and the 4" (480×480). Touches on the screen are sent back to KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
 
 Each display has its own id, and each id gets its own KIP, drawn at that screen's size with its own login and dashboards.
 

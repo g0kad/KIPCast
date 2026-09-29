@@ -68,6 +68,14 @@
           <span slot="not-allowed" class="unsupported">Open this page over HTTPS to install.</span>
         </esp-web-install-button>
       </div>
+      <div class="board">
+        <h3>Waveshare ESP32-S3-Touch-LCD-4.3</h3>
+        <p>4.3", 800×480, including the 4.3B. Plug into the USB-C port marked <b>USB</b>, not the one marked UART.</p>
+        <esp-web-install-button manifest="manifest-43in.json">
+          <span slot="unsupported" class="unsupported">This browser can't install firmware. Use Chrome or Edge on a computer.</span>
+          <span slot="not-allowed" class="unsupported">Open this page over HTTPS to install.</span>
+        </esp-web-install-button>
+      </div>
     </div>
     <p class="small">Click <b>Connect</b>, choose the screen's port (usually "USB JTAG/serial debug unit"), then <b>Install</b>.
       When updating a screen that's already set up, leave <b>Erase device</b> unticked to keep its settings.</p>
@@ -89,9 +97,9 @@
   <section class="panel">
     <h2>If it doesn't work</h2>
     <ol>
-      <li><b>No port to choose:</b> try another cable, as some only carry power. On the 7", check you're using the port marked <b>USB</b>.
+      <li><b>No port to choose:</b> try another cable, as some only carry power. On the 7" and 4.3", check you're using the port marked <b>USB</b>.
         If it still doesn't appear, hold the <b>BOOT</b> button while plugging the cable in.</li>
-      <li><b>The 7" screen stays blank after installing:</b> unplug it and plug it back in. One of its display lines shares a pin
+      <li><b>The 7" or 4.3" screen stays blank after installing:</b> unplug it and plug it back in. One of its display lines shares a pin
         that can leave it in download mode after a reset.</li>
       <li><b>The screen can't find Signal K:</b> check the KIPCast plugin is installed and enabled in Signal K.
         Or open setup and enter the Pi's IP address as the Signal K server.</li>

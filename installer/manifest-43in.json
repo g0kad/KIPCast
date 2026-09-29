@@ -1,0 +1,11 @@
+{
+  "name": "KIPCast display (Waveshare 4.3\" 800x480)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [{ "path": "kipcast-display-43in.bin", "offset": 0 }]
+    }
+  ]
+}

@@ -58,7 +58,7 @@ jobs:
       # No secrets.h here: the images have no WiFi details or display id
       # built in, so each screen opens its setup page on first boot.
       - name: Build
-        run: pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in
+        run: pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in -e kipcast-display-43in
 
       - name: Assemble installer site
         run: |
@@ -67,6 +67,7 @@ jobs:
           cp installer/* site/
           cp kipcast-display/.pio/build/kipcast-display/firmware.factory.bin site/kipcast-display-7in.bin
           cp kipcast-display/.pio/build/kipcast-display-4in/firmware.factory.bin site/kipcast-display-4in.bin
+          cp kipcast-display/.pio/build/kipcast-display-43in/firmware.factory.bin site/kipcast-display-43in.bin
           sed -i "s/\"version\": \"dev\"/\"version\": \"$VERSION\"/" site/manifest-*.json
           ls -l site
 

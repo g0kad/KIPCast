@@ -1,6 +1,6 @@
 /*
  * KIPCast display firmware for Waveshare ESP32-S3 touch LCDs:
- * ESP32-S3-Touch-LCD-7 (800x480) and ESP32-S3-Touch-LCD-4 Rev4 (480x480)
+ * ESP32-S3-Touch-LCD-7 and -4.3 (800x480), and ESP32-S3-Touch-LCD-4 Rev4 (480x480)
  *
  * - Connects to the KIPCast server on the Pi over TCP
  * - Receives JPEG frames, decodes them straight onto the RGB panel

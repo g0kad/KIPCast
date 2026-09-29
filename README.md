@@ -10,7 +10,7 @@ Put live [KIP](https://github.com/mxtommy/Kip) dashboards on cheap ESP32 touchsc
 
 <sub>KIP dashboards on the 4" 480×480 screen.</sub>
 
-A Signal K plugin on the Raspberry Pi runs KIP in headless Chromium and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" (800×480) and the 4" (480×480). Screens of both sizes can be used at once. Touches on the screen are sent back and injected into KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
+A Signal K plugin on the Raspberry Pi runs KIP in headless Chromium and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" and 4.3" (800×480) and the 4" (480×480). Screens of both sizes can be used at once. Touches on the screen are sent back and injected into KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
 
 ```
  Raspberry Pi (Signal K)                          ESP32-S3 display
@@ -33,7 +33,7 @@ Each display has an id (for example `saloon` or `helm`). Each id gets its own KI
 | Folder | What it is |
 |---|---|
 | [`signalk-kipcast/`](signalk-kipcast/) | Signal K plugin (Node.js). Also runs on its own with `node standalone.js`. |
-| [`kipcast-display/`](kipcast-display/) | PlatformIO firmware for the Waveshare ESP32-S3-Touch-LCD-7 and -4. |
+| [`kipcast-display/`](kipcast-display/) | PlatformIO firmware for the Waveshare ESP32-S3-Touch-LCD-7, -4.3 and -4. |
 
 ## Quick start
 
@@ -73,7 +73,7 @@ In the Signal K admin UI, open **Webapps → KIPCast**. It lists every display t
 
 **Open** takes you to the browser viewer for that display at its own size, which is where you set up its KIP. **Forget** removes a display from the list. Its KIP login and dashboards are kept, and a screen with that id adds itself back when it next connects.
 
-Screens add themselves the first time they connect. To set up a display before its screen exists, use **Add a display**: enter the id you'll give the screen and pick its size (7" 800×480, 4" 480×480, or custom).
+Screens add themselves the first time they connect. To set up a display before its screen exists, use **Add a display**: enter the id you'll give the screen and pick its size (7" or 4.3" 800×480, 4" 480×480, or custom).
 
 The page and its changes need a Signal K login. The plugin status in **Server → Plugin Config** also lists the connected screens and their sizes, for example `Connected: helm 480×480, shedtest 800×480`.
 
@@ -184,8 +184,9 @@ Supported boards, each with its own PlatformIO environment:
 |---|---|---|---|
 | [Waveshare ESP32-S3-Touch-LCD-7](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-7) | `kipcast-display` (default) | 800×480 ST7262 | CH422G I/O expander |
 | [Waveshare ESP32-S3-Touch-LCD-4](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4), Rev4.0 | `kipcast-display-4in` | 480×480 ST7701 | CH32V003 I/O expander. Earlier revisions use a TCA9554 and aren't supported yet. |
+| [Waveshare ESP32-S3-Touch-LCD-4.3](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3), including the 4.3B | `kipcast-display-43in` | 800×480 ST7262 | Same hardware as the 7", so it uses the 7" config. Not yet tested on a real board. |
 
-Both have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
+All have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
 
 1. Install [PlatformIO](https://platformio.org/). The project uses the community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform, because ESP32_Display_Panel v1.x needs Arduino core 3.x and the official platform is still on 2.x. PlatformIO downloads it automatically.
 2. Optionally, build your details in so a freshly flashed screen skips the setup page:
@@ -194,20 +195,21 @@ Both have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
    cp secrets.example.h secrets.h          # secrets.h is ignored by git
    ```
    Edit `secrets.h` and fill in your SSID, password and `DISPLAY_ID` (a different id for each screen), and `KIPCAST_HOST` if the screen shouldn't find the Pi by itself. If you build for both boards, `secrets.example.h` shows how to give each its own id. Anything saved on the setup page takes priority; `pio run -t erase` clears it.
-3. Build and flash over the ESP32's native USB. On the 7" that's the USB-C port marked **USB**; the 4" has only one USB-C port.
+3. Build and flash over the ESP32's native USB. On the 7" and 4.3" that's the USB-C port marked **USB**; the 4" has only one USB-C port.
    ```bash
    cd kipcast-display
    pio run -e kipcast-display -t upload        # 7"
    pio run -e kipcast-display-4in -t upload    # 4"
+   pio run -e kipcast-display-43in -t upload   # 4.3"
    pio device monitor
    ```
    Each build also writes `firmware.factory.bin`, the single image that the web installer uses.
 
    Your own builds report their firmware version as `dev`, which the plugin never flags as out of date. To build as a release version, set `KIPCAST_VERSION` first, for example `KIPCAST_VERSION=0.3.0 pio run`. The release build sets it from the git tag, which must match `kipcast.firmware` in `signalk-kipcast/package.json`.
 
-Each board's panel config is in `include/boards/<board>/esp_panel_board_custom_conf.h`. The 7" config comes from Waveshare's `09_lvgl_v8_demo` example, and the 4" config from Waveshare's `esp32_s3_touch_lcd_4` board support package (both Apache-2.0). The build may warn that a config file is in an older format than the library expects. The newer settings it lacks don't apply to these boards, so the warning can be ignored.
+Each board's panel config is in `include/boards/<board>/esp_panel_board_custom_conf.h`. The 7" config (also used by the 4.3") comes from Waveshare's `09_lvgl_v8_demo` example, and the 4" config from Waveshare's `esp32_s3_touch_lcd_4` board support package (both Apache-2.0). The build may warn that a config file is in an older format than the library expects. The newer settings it lacks don't apply to these boards, so the warning can be ignored.
 
-**7" quirks:**
+**7" and 4.3" quirks:**
 - If the USB port disappears (for example after running Waveshare's demo, which switches those pins to CAN), hold **BOOT** while plugging the cable in.
 - One of the LCD data lines shares a pin with the ESP32's boot-mode pin, so after a reset or a flash the board can start in download mode with a blank screen. Unplug it and plug it back in.
 

@@ -9,6 +9,7 @@
 # The empty package-lock.json at the repository root is only for this: the
 # shared workflow turns on npm caching when it finds a lock file anywhere,
 # but setup-node then looks for one at the root, and fails without it.
+# Remove it once https://github.com/SignalK/signalk-server/issues/3100 is fixed.
 
 name: SignalK Plugin CI
 

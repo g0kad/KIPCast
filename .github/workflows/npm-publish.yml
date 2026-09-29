@@ -1,0 +1,57 @@
+# Publishes signalk-kipcast to npm when a push to main has a version in
+# signalk-kipcast/package.json that isn't on npm yet, once Signal K's
+# plugin CI has passed for that commit. The App Store shows the CI results
+# for the commit a version was published from, so this publishes exactly
+# the commit the CI ran on.
+#
+# Uses npm trusted publishing: npmjs.com trusts this workflow file (by
+# name), so there is no npm token. Set up under the package's Settings >
+# Trusted Publisher on npmjs.com: GitHub Actions, user g0kad, repository
+# KIPCast, workflow npm-publish.yml.
+
+name: Publish to npm
+
+on:
+  workflow_run:
+    workflows: [SignalK Plugin CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # proves to npm that this is the trusted workflow
+    defaults:
+      run:
+        working-directory: signalk-kipcast
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Check for a new version
+        id: version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [[ -n "$(npm view "signalk-kipcast@$V" version 2>/dev/null)" ]]; then
+            echo "signalk-kipcast $V is already on npm; nothing to publish"
+          else
+            echo "Publishing signalk-kipcast $V"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish

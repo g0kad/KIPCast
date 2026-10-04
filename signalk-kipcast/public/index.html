@@ -30,7 +30,7 @@
     box-shadow: inset 0 1px 0 #2a323b, 0 12px 30px rgb(0 0 0 / .35); margin-bottom: 20px;
   }
   .row {
-    display: grid; grid-template-columns: minmax(0, 1.3fr) 90px 150px minmax(0, 1.5fr) 140px;
+    display: grid; grid-template-columns: minmax(0, 1.3fr) 90px 150px minmax(0, 1.5fr) 250px;
     gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line);
   }
   .row:first-of-type { border-top: 0; }
@@ -67,6 +67,17 @@
   .note { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
   ol.steps { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; }
   ol.steps li::marker { color: var(--dim); }
+  dialog {
+    width: min(100% - 32px, 420px); padding: 20px; border: 0; border-radius: 12px;
+    background: var(--housing); color: var(--ink); box-shadow: 0 12px 40px rgb(0 0 0 / .6);
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .55); }
+  dialog h2 { color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 17px; }
+  dialog form { display: grid; gap: 12px; align-items: stretch; }
+  dialog input { width: 100%; }
+  dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  dialog .note { margin: 0; }
+  dialog .msg { margin: 0; }
   code { background: #1a2027; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 
   @media (max-width: 620px) {
@@ -96,7 +107,9 @@
       <li>In <b>Security → Users</b>, create a Signal K user for the size, for example <code>kip480</code>.</li>
       <li>On a computer, open KIP in an ordinary browser, log in as that user and build the dashboards there.
         It's much easier than editing on the touchscreen.</li>
-      <li>Click <b>Open</b> for the display above and log its KIP in as the same user. The dashboards load from Signal K.</li>
+      <li>Click <b>KIP login</b> for the display above and enter the same user. Its KIP logs in and loads the dashboards
+        from Signal K.</li>
+      <li>Click <b>Open</b> to see the display in the browser viewer.</li>
       <li>With the screen in view, resize and move widgets in the viewer. It's drawn at the screen's exact size and
         changes show on the screen straight away.</li>
     </ol>
@@ -128,6 +141,30 @@
       display here to set up its dashboards before the screen has connected; screens add themselves.</p>
   </section>
 </main>
+
+<dialog id="loginDialog" aria-labelledby="loginTitle">
+  <form id="loginForm" method="dialog">
+    <h2 id="loginTitle">KIP login</h2>
+    <p class="note" id="loginNow"></p>
+    <label>Signal K user
+      <input name="user" required autocomplete="off" spellcheck="false" autocapitalize="off">
+    </label>
+    <label>Password
+      <input name="password" type="password" required autocomplete="new-password">
+    </label>
+    <label>KIP configuration
+      <input name="configName" maxlength="64" spellcheck="false" autocapitalize="off" placeholder="default">
+    </label>
+    <p class="note">The display's KIP logs in as this user and loads the user's dashboards from this
+      configuration. Leave it as <code>default</code> unless you've saved other configurations in KIP.</p>
+    <div class="msg" id="loginMsg" role="status"></div>
+    <div class="buttons">
+      <button type="button" id="loginCancel">Cancel</button>
+      <button class="primary" type="submit" id="loginSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 (() => {
   const API = '/plugins/signalk-kipcast/displays';
@@ -194,6 +231,7 @@
           <span class="status">${status(d)}</span>
           <span class="actions">
             <a class="btn primary" href="${viewer}?id=${encodeURIComponent(d.id)}" target="_blank" rel="noopener" data-open>Open</a>
+            <button type="button" data-login="${esc(d.id)}">KIP login</button>
             <button type="button" data-forget="${esc(d.id)}" ${d.screens ? 'disabled title="Connected screens can’t be forgotten"' : ''}>Forget</button>
           </span>
         </div>`).join('');
@@ -245,6 +283,68 @@
     if (!confirm(`Forget “${id}”? Its remembered size is removed. Its KIP login and dashboards are kept, and a screen with this id adds itself again when it connects.`)) return;
     await fetch(`${API}/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
     refresh();
+  });
+
+  // Setting a display's KIP login here saves typing it on the touchscreen.
+  // The plugin checks it with Signal K before saving it.
+  const dialog = document.getElementById('loginDialog');
+  const loginForm = document.getElementById('loginForm');
+  const loginMsg = document.getElementById('loginMsg');
+  const loginNow = document.getElementById('loginNow');
+  const loginSave = document.getElementById('loginSave');
+  let loginId = null;
+  const loginApi = (id) => `${API}/${encodeURIComponent(id)}/kip-login`;
+
+  list.addEventListener('click', async (e) => {
+    const id = e.target.dataset && e.target.dataset.login;
+    if (!id) return;
+    loginId = id;
+    loginForm.reset();
+    loginMsg.textContent = '';
+    document.getElementById('loginTitle').textContent = `KIP login for ${id}`;
+    loginNow.textContent = 'Checking who it logs in as now…';
+    loginSave.disabled = false;
+    dialog.showModal();
+    try {
+      const r = await fetch(loginApi(id), { credentials: 'include' });
+      const data = await r.json().catch(() => ({}));
+      if (loginId !== id) return;
+      if (!r.ok) throw new Error(data.error || r.statusText);
+      loginNow.textContent = data.user ? `It logs in as ${data.user} now.` : 'It isn’t logged in to Signal K now.';
+      if (!loginForm.elements.user.value) loginForm.elements.user.value = data.user;
+      if (!loginForm.elements.configName.value) loginForm.elements.configName.value = data.configName;
+    } catch (err) {
+      if (loginId === id) loginNow.textContent = `Couldn’t read its current login: ${err.message}`;
+    }
+  });
+
+  document.getElementById('loginCancel').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => { loginId = null; });
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = loginId;
+    const f = loginForm.elements;
+    loginMsg.textContent = '';
+    loginSave.disabled = true;
+    loginSave.textContent = 'Checking…';
+    try {
+      const r = await fetch(loginApi(id), {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: f.user.value, password: f.password.value, configName: f.configName.value }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `Couldn’t save the login (${r.status})`);
+      f.password.value = '';
+      dialog.close();
+      refresh();
+    } catch (err) {
+      if (loginId === id) loginMsg.textContent = err.message;
+    } finally {
+      loginSave.disabled = false;
+      loginSave.textContent = 'Save';
+    }
   });
 
   const preset = form.elements.preset;

@@ -108,8 +108,8 @@ Editing KIP's layout on the touchscreen itself is fiddly, so build the dashboard
 
 1. **Create a Signal K user for the screen size.** In **Security → Users**, add a user such as `kip480` for the 4" screens or `kip800` for the 7" ones.
 2. **Build the dashboards in an ordinary browser.** On a computer, open KIP (`http://<pi>:3000/@mxtommy/kip/`), log in as that user, and add the dashboards and widgets and choose their Signal K paths. With a full-size window, mouse and keyboard this is much quicker than on the screen. A private window keeps this login separate from the one you normally use KIP with.
-3. **Log the display in as the same user.** In **Webapps → KIPCast**, click **Open** for the display and log its KIP in as that user. The dashboards you just built load from the Signal K server.
-4. **Fine-tune while watching the screen.** The viewer is drawn at the screen's exact size and everything you do in it appears on the screen straight away. Resize and move the widgets in the viewer until they read well on the screen itself.
+3. **Log the display in as the same user.** In **Webapps → KIPCast**, click **KIP login** for the display and enter that user's name and password. KIPCast checks them with Signal K, then the display's KIP logs in and the dashboards you just built load from the Signal K server. The screen doesn't need to be connected.
+4. **Fine-tune while watching the screen.** Click **Open** for the display. The viewer is drawn at the screen's exact size and everything you do in it appears on the screen straight away. Resize and move the widgets in the viewer until they read well on the screen itself.
 
 Any other screen of the same size can then be logged in as the same user and gets the same dashboards.
 

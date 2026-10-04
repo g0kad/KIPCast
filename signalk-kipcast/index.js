@@ -1,6 +1,6 @@
 'use strict';
 const path = require('path');
-const { KIPCast, DEFAULTS, FIRMWARE_INSTALLER } = require('./lib/kipcast');
+const { KIPCast, DEFAULTS, FIRMWARE_INSTALLER, sanitiseId } = require('./lib/kipcast');
 
 module.exports = function (app) {
   let cast = null;
@@ -78,6 +78,22 @@ module.exports = function (app) {
       if (!running(res)) return;
       res.json({ pass: cast.opts.viewerAuth ? cast.issueViewerPass() : null });
     });
+
+    // The Signal K user a display's KIP logs in as, so it can be set here
+    // rather than typed on the touchscreen. Opens the display's KIP if needed.
+    const kipLogin = (fn) => async (req, res) => {
+      if (!running(res)) return;
+      try {
+        res.json(await fn(sanitiseId(req.params.id), req));
+      } catch (e) {
+        res.status(e.status || 500).json({ error: e.message });
+      }
+    };
+    router.get('/displays/:id/kip-login', kipLogin((id) => cast.getKipLogin(id)));
+    router.put('/displays/:id/kip-login', kipLogin(async (id, req) => {
+      const body = req.body && Object.keys(req.body).length ? req.body : await readJson(req);
+      return cast.setKipLogin(id, body);
+    }));
 
     router.delete('/displays/:id', (req, res) => {
       if (!running(res)) return;

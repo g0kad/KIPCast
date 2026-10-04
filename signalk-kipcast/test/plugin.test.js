@@ -45,3 +45,27 @@ test('a missing Chromium is reported in the status, not as an error', async (t) 
   assert.match(app.statuses.at(-1), /^Chromium not found at .*no-such-chromium\. No displays connected$/);
   await plugin.stop();
 });
+
+test('the KIP login routes answer with the right status', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kipcast-test-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const plugin = createPlugin(fakeApp(dir));
+  const routes = {};
+  const route = (method) => (p, h) => { routes[`${method} ${p}`] = h; };
+  plugin.registerWithRouter({ get: route('GET'), post: route('POST'), put: route('PUT'), delete: route('DELETE') });
+  plugin.start({ tcpPort: 0, httpPort: 0 });
+  t.after(() => plugin.stop());
+
+  const call = async (key, req) => {
+    const res = { code: 200 };
+    res.status = (c) => { res.code = c; return res; };
+    res.json = (b) => { res.body = b; };
+    await routes[key](req, res);
+    return res;
+  };
+  const unknown = await call('GET /displays/:id/kip-login', { params: { id: 'nosuch' } });
+  assert.equal(unknown.code, 404);
+  assert.match(unknown.body.error, /nosuch/);
+  const noUser = await call('PUT /displays/:id/kip-login', { params: { id: 'nosuch' }, body: { password: 'x' } });
+  assert.equal(noUser.code, 400);
+});

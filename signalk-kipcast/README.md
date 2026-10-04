@@ -36,12 +36,14 @@ Editing KIP's layout on the touchscreen itself is fiddly, so build the dashboard
 
 1. **Create a Signal K user for the screen size**, for example `kip480` for the 4" screens, in **Security → Users**.
 2. **Build the dashboards in an ordinary browser.** Open KIP, log in as that user, and add the dashboards and widgets.
-3. **Log the display in as the same user.** In **Webapps → KIPCast**, click **Open** for the display and log its KIP in as that user. The dashboards load from the Signal K server.
-4. **Fine-tune while watching the screen.** The viewer is drawn at the screen's exact size and everything you do in it appears on the screen straight away.
+3. **Log the display in as the same user.** In **Webapps → KIPCast**, click **KIP login** for the display and enter that user's name and password. KIPCast checks them with Signal K, then the display's KIP logs in and loads the dashboards from the Signal K server. The screen doesn't need to be connected.
+4. **Fine-tune while watching the screen.** Click **Open** for the display. The viewer is drawn at the screen's exact size and everything you do in it appears on the screen straight away.
 
 ## Security
 
 The browser viewer on port 3050 uses your Signal K login: open it with **Open** in **Webapps → KIPCast**, which gives it a pass that lasts 12 hours. This relies on Signal K having security turned on, and can be switched off in the plugin settings.
+
+**KIP login** saves the user name and password in that display's KIP settings, on the Signal K server, just as KIP does when you log in on the screen. KIP needs them to log in again each time it starts.
 
 The screens connect on port 3051, which has no login because an ESP32 can't log in. Anything on the network that speaks KIPCast's protocol can show and touch a display's KIP, so keep KIPCast on a network you trust.
 

@@ -14,6 +14,10 @@
  *   HTTP/WS (default :3050) - browser test viewer at /, WebSocket at /ws?id=...,
  *                           known displays (read-only JSON) at /displays
  *
+ * A display's KIP login (the Signal K user its KIP logs in as) can be set
+ * without touching the screen: setKipLogin() checks it with Signal K, writes
+ * it into that display's KIP settings and reloads KIP.
+ *
  * With viewerAuth, the viewer port needs a one-time pass from issueViewerPass()
  * (handed out by the Signal K plugin, behind Signal K's login). The pass is
  * swapped for a cookie, which the page, /displays and /ws then require.
@@ -227,9 +231,14 @@ class Session {
 
   removeClient(c) {
     this.clients.delete(c);
-    if (this.clients.size === 0 && !this.closing) {
-      this.idleTimer = setTimeout(() => this.close(), this.cast.opts.idleCloseSec * 1000);
-    }
+    this.idleIfUnused();
+  }
+
+  // Close after idleCloseSec unless a display arrives first.
+  idleIfUnused() {
+    if (this.clients.size || this.closing) return;
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.close(), this.cast.opts.idleCloseSec * 1000);
   }
 
   async close() {
@@ -611,6 +620,79 @@ class KIPCast {
     this.tcpServer.listen(this.opts.tcpPort, () => this.log(`ESP32 displays: tcp port ${this.opts.tcpPort}`));
   }
 
+  /* ---- A display's KIP login ---- */
+
+  // KIP keeps its Signal K login in localStorage ('connectionConfig'), and
+  // logs in with it each time it loads. Each display has its own Chromium
+  // profile, so the settings are reached through the display's own page,
+  // opened at its remembered size if it isn't open already.
+  async kipPage(id) {
+    const d = this.displays.get(id);
+    if (!d && !this.sessions.has(id)) throw httpError(404, `No display called "${id}"`);
+    const s = await this.getSession(id, d ? d.width : this.opts.width, d ? d.height : this.opts.height);
+    s.idleIfUnused();
+    // KIP writes its connection settings as it starts.
+    try {
+      await s.page.waitForFunction(() => localStorage.getItem('connectionConfig'), { timeout: 20000 });
+    } catch {
+      throw httpError(502, 'The dashboard page doesn’t look like KIP, so it has no Signal K login to set');
+    }
+    return s.page;
+  }
+
+  // Who the display's KIP logs in as. Never the password.
+  async getKipLogin(id) {
+    const page = await this.kipPage(id);
+    return page.evaluate(() => {
+      const c = JSON.parse(localStorage.getItem('connectionConfig')) || {};
+      return {
+        user: c.useSharedConfig ? c.loginName || '' : '',
+        configName: c.sharedConfigName || 'default',
+      };
+    });
+  }
+
+  // Checks the user name and password with Signal K, from the display's own
+  // KIP so it uses the same server address, then saves them as KIP's login
+  // and reloads KIP, which logs in and loads that user's dashboards.
+  async setKipLogin(id, { user, password, configName } = {}) {
+    user = typeof user === 'string' ? user.trim() : '';
+    configName = typeof configName === 'string' ? configName.trim() : '';
+    if (!user || user.length > 256) throw httpError(400, 'Enter the Signal K user name');
+    if (typeof password !== 'string' || !password || password.length > 256) throw httpError(400, 'Enter the password');
+    if (configName.length > 64) throw httpError(400, 'The configuration name is too long');
+    const page = await this.kipPage(id);
+    const result = await page.evaluate(async (usr, pwd, name) => {
+      const c = JSON.parse(localStorage.getItem('connectionConfig')) || {};
+      const server = (c.signalKUrl || location.origin).replace(/\/+$/, '');
+      let r;
+      try {
+        r = await fetch(`${server}/signalk/v1/auth/login`, {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: usr, password: pwd }),
+        });
+      } catch {
+        return { status: 502, error: `KIP couldn’t reach Signal K at ${server}` };
+      }
+      if (r.status === 401) return { status: 400, error: 'Signal K didn’t accept that user name and password' };
+      if (!r.ok) return { status: 502, error: `Signal K refused the login (${r.status}). Is its security turned on?` };
+      Object.assign(c, {
+        loginName: usr,
+        loginPassword: pwd,
+        useSharedConfig: true,
+        sharedConfigName: name || c.sharedConfigName || 'default',
+      });
+      localStorage.setItem('connectionConfig', JSON.stringify(c));
+      return { configName: c.sharedConfigName };
+    }, user, password, configName);
+    if (result.error) throw httpError(result.status, result.error);
+    this.log(`[${id}] KIP now logs in as ${user} (configuration ${result.configName})`);
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+    return { user, configName: result.configName };
+  }
+
   /* ---- Viewer login ---- */
 
   // A one-time pass for the viewer port. The plugin hands these out to
@@ -758,6 +840,11 @@ function keyInfo(name) {
   if (/^[A-Za-z]$/.test(name)) return { key: name, code: `Key${name.toUpperCase()}`, vk: name.toUpperCase().charCodeAt(0) };
   if (/^[0-9]$/.test(name)) return { key: name, code: `Digit${name}`, vk: name.charCodeAt(0) };
   return null;
+}
+
+// An error carrying the HTTP status the plugin should answer with.
+function httpError(status, message) {
+  return Object.assign(new Error(message), { status });
 }
 
 // A reported screen dimension, or 0 if missing or implausible.

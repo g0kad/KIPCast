@@ -88,6 +88,7 @@ test('the plugin turns viewerAuth on, and hands out passes', async (t) => {
   plugin.registerWithRouter({
     get: (p, h) => { routes[`GET ${p}`] = h; },
     post: (p, h) => { routes[`POST ${p}`] = h; },
+    put: (p, h) => { routes[`PUT ${p}`] = h; },
     delete: (p, h) => { routes[`DELETE ${p}`] = h; },
   });
   plugin.start({ tcpPort: 0, httpPort: 0 });

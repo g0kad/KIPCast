@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Set a display's KIP login from **Webapps → KIPCast**: click **KIP login**, enter the Signal K user and password, and the display's KIP logs in as that user and loads its dashboards. No more typing it on the touchscreen or in the viewer. The login is checked with Signal K before it's saved, and the screen doesn't need to be connected.
+
 ## 0.3.1 (2026-09-25)
 
 - The App Store shows the KIPCast icon. It looks for it at the package root, while the Webapps page looks in `public/`, so the package now has it in both.

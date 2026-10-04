@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 (2026-10-04)
 
 - Set a display's KIP login from **Webapps → KIPCast**: click **KIP login**, enter the Signal K user and password, and the display's KIP logs in as that user and loads its dashboards. No more typing it on the touchscreen or in the viewer. The login is checked with Signal K before it's saved, and the screen doesn't need to be connected.
 - Embedded web pages, such as AvNav in KIP's Embed Webpage widget, keep running when you change dashboard. They used to start again from scratch every time you came back to their dashboard. Can be switched off in the plugin settings.
+- Display firmware 0.3.2 adds the Waveshare ESP32-S3-Touch-LCD-4.3 (800×480) to the [web installer](https://g0kad.github.io/KIPCast/). Nothing else has changed in the firmware, so updating 7" and 4" screens from 0.3.0 is optional, even though **Webapps → KIPCast** offers it.
 
 ## 0.3.1 (2026-09-25)
 

@@ -51,6 +51,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 const puppeteer = require('puppeteer-core');
 const pkg = require('../package.json');
+const { keepEmbeds } = require('./keep-embeds');
 
 // Where users get new display firmware.
 const FIRMWARE_INSTALLER = 'https://g0kad.github.io/KIPCast/';
@@ -64,6 +65,7 @@ const DEFAULTS = {
   httpPort: 3050,
   tcpPort: 3051,
   inputMode: 'touch',        // 'touch' or 'mouse'
+  keepEmbeds: true,          // embedded web pages keep running when you change dashboard
   chromiumPath: null,        // auto-detect if null
   profilesDir: path.join(__dirname, '..', 'chrome-profiles'),  // one subfolder per display id
   seedProfileDir: path.join(__dirname, '..', 'chrome-profile'), // copied into new display profiles
@@ -205,6 +207,7 @@ class Session {
 
     log(`[${this.id}] opening ${opts.url} at ${this.width}x${this.height}`);
     try {
+      if (opts.keepEmbeds) await page.evaluateOnNewDocument(keepEmbeds);
       await page.goto(opts.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await cdp.send('Page.startScreencast', {
         format: 'jpeg',

@@ -20,6 +20,8 @@ function fakeBrowser() {
   page.setViewport = async (v) => { page.viewport = v; };
   page.createCDPSession = async () => cdp;
   page.goto = async (url) => { page.url = url; };
+  page.onNewDocument = [];
+  page.evaluateOnNewDocument = async (fn) => { page.onNewDocument.push(fn); };
   page.reload = async () => { page.reloads = (page.reloads || 0) + 1; };
 
   // Code run "in the page" gets this localStorage, and fetch answers from

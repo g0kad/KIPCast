@@ -143,6 +143,7 @@ The screens' own port, 3051, has no login: an ESP32 has no way to log in. Anythi
 | Display TCP port | 3051 | Port the ESP32 connects to. |
 | Browser viewer port | 3050 | Port for the test viewer. |
 | Input mode | `touch` | Switch to `mouse` if a page ignores touch events. |
+| Keep embedded web pages running | on | A page in KIP's Embed Webpage widget, such as AvNav, carries on where it was when you come back to its dashboard, instead of starting again. It keeps running in the background meanwhile. |
 | Chromium path | auto | Checks `/usr/bin/chromium`, `chromium-browser` and `google-chrome`. If Chromium can't be found, the plugin still starts and says so in its status; displays can't connect until it's installed. |
 | Browser viewer needs a Signal K login | on | See [The browser viewer](#the-browser-viewer). |
 

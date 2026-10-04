@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Set a display's KIP login from **Webapps → KIPCast**: click **KIP login**, enter the Signal K user and password, and the display's KIP logs in as that user and loads its dashboards. No more typing it on the touchscreen or in the viewer. The login is checked with Signal K before it's saved, and the screen doesn't need to be connected.
+- Embedded web pages, such as AvNav in KIP's Embed Webpage widget, keep running when you change dashboard. They used to start again from scratch every time you came back to their dashboard. Can be switched off in the plugin settings.
 
 ## 0.3.1 (2026-09-25)
 

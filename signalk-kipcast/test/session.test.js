@@ -185,3 +185,13 @@ test('a page left with no displays closes after idleCloseSec', async (t) => {
   assert.equal(browser.closed, true);
   assert.equal(cast.sessions.size, 0);
 });
+
+test('embedded web pages are kept running unless keepEmbeds is off', async (t) => {
+  const { keepEmbeds } = require('../lib/keep-embeds');
+  const on = makeCast(t);
+  const { page } = await connect(on.cast, on.client(), 'H helm 480 480');
+  assert.deepEqual(page.onNewDocument, [keepEmbeds]);
+  const off = makeCast(t, { keepEmbeds: false });
+  const { page: plain } = await connect(off.cast, off.client(), 'H nav 800 480');
+  assert.deepEqual(plain.onNewDocument, []);
+});

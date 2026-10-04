@@ -58,6 +58,7 @@ The screens connect on port 3051, which has no login because an ESP32 can't log 
 | Display TCP port | 3051 | Port the screens connect to. |
 | Browser viewer port | 3050 | |
 | Input mode | `touch` | Switch to `mouse` if a page ignores touch events. |
+| Keep embedded web pages running | on | A page in KIP's Embed Webpage widget, such as AvNav, carries on where it was when you come back to its dashboard, instead of starting again. It keeps running in the background meanwhile. |
 | Chromium path | auto | |
 | Browser viewer needs a Signal K login | on | |
 

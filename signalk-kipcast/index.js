@@ -22,6 +22,11 @@ module.exports = function (app) {
       tcpPort: { type: 'number', title: 'Display (ESP32) TCP port', default: DEFAULTS.tcpPort },
       httpPort: { type: 'number', title: 'Browser viewer port', default: DEFAULTS.httpPort },
       inputMode: { type: 'string', title: 'Input mode', enum: ['touch', 'mouse'], default: DEFAULTS.inputMode },
+      keepEmbeds: {
+        type: 'boolean',
+        title: 'Keep embedded web pages (such as AvNav) running when you change dashboard',
+        default: DEFAULTS.keepEmbeds,
+      },
       chromiumPath: { type: 'string', title: 'Chromium path (blank = auto-detect)', default: '' },
       viewerAuth: {
         type: 'boolean',
@@ -35,6 +40,7 @@ module.exports = function (app) {
     cast = new KIPCast({
       ...options,
       viewerAuth: options.viewerAuth !== false,  // on unless turned off
+      keepEmbeds: options.keepEmbeds !== false,
       profilesDir: path.join(app.getDataDirPath(), 'chrome-profiles'),
       seedProfileDir: path.join(app.getDataDirPath(), 'chrome-profile'),
       displaysFile: path.join(app.getDataDirPath(), 'displays.json'),

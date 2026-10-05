@@ -1,7 +1,8 @@
 /*
  * KIPCast display firmware for Waveshare touch LCDs:
  * ESP32-S3-Touch-LCD-7 and -4.3 (800x480), ESP32-S3-Touch-LCD-4 Rev4 (480x480)
- * and ESP32-P4-WIFI6-Touch-LCD-10.1 (1280x800)
+ * and ESP32-P4-WIFI6-Touch-LCD-10.1 (1280x800); Elecrow CrowPanel Advanced
+ * 10.1" ESP32-P4 (1024x600)
  *
  * - Connects to the KIPCast server on the Pi over TCP
  * - Receives JPEG frames and decodes them onto the panel: in software on the
@@ -30,6 +31,7 @@
   #include <driver/jpeg_decode.h>
   #include <driver/ppa.h>
   #include <esp_cache.h>
+  #include <esp_ldo_regulator.h>
 #else
   #include <JPEGDEC.h>
   #if KIPCAST_ROTATION != 0
@@ -287,6 +289,15 @@ static void ch32PowerOn() {
 static void initDisplay() {
 #ifdef KIPCAST_BOARD_LCD4
   ch32PowerOn();
+#endif
+#ifdef KIPCAST_BOARD_CROWPANEL_10IN
+  // The touch controller's I2C pull-ups run from the P4's LDO4.
+  static esp_ldo_channel_handle_t ldo4 = nullptr;
+  esp_ldo_channel_config_t ldo4Cfg = {};
+  ldo4Cfg.chan_id = 4;
+  ldo4Cfg.voltage_mv = 3300;
+  esp_err_t ldoErr = esp_ldo_acquire_channel(&ldo4Cfg, &ldo4);
+  if (ldoErr != ESP_OK) Serial.printf("LDO4: %s\n", esp_err_to_name(ldoErr));
 #endif
   board = new Board();
   if (!board->init()) { Serial.println("board init failed"); while (true) delay(1000); }
@@ -817,6 +828,11 @@ void setup() {
   while (!Serial && millis() < 3000) delay(10);
   delay(200);
   Serial.printf("KIPCast display starting, firmware %s\n", FW_VERSION);
+#ifdef KIPCAST_BOARD_CROWPANEL_10IN
+  // Its ESP32-C6 is wired differently from Espressif's reference board:
+  // data lines reversed, reset on GPIO32 (clk, cmd, d0-d3, reset).
+  WiFi.setPins(18, 19, 17, 16, 15, 14, 32);
+#endif
 #ifdef KIPCAST_P4
   // The JPEG decoder reads by DMA, so it allocates its own input buffer.
   jpeg_decode_memory_alloc_cfg_t inMem = {JPEG_DEC_ALLOC_INPUT_BUFFER};

@@ -57,8 +57,10 @@ jobs:
 
       # No secrets.h here: the images have no WiFi details or display id
       # built in, so each screen opens its setup page on first boot.
+      # The P4 10.1" build is compiled to keep it working, but isn't released
+      # or offered in the installer until it has been tried on a board.
       - name: Build
-        run: pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in -e kipcast-display-43in
+        run: pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in -e kipcast-display-43in -e kipcast-display-p4-10in
 
       - name: Assemble installer site
         run: |

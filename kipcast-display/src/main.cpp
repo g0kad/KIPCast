@@ -1,9 +1,11 @@
 /*
- * KIPCast display firmware for Waveshare ESP32-S3 touch LCDs:
- * ESP32-S3-Touch-LCD-7 and -4.3 (800x480), and ESP32-S3-Touch-LCD-4 Rev4 (480x480)
+ * KIPCast display firmware for Waveshare touch LCDs:
+ * ESP32-S3-Touch-LCD-7 and -4.3 (800x480), ESP32-S3-Touch-LCD-4 Rev4 (480x480)
+ * and ESP32-P4-WIFI6-Touch-LCD-10.1 (1280x800)
  *
  * - Connects to the KIPCast server on the Pi over TCP
- * - Receives JPEG frames, decodes them straight onto the RGB panel
+ * - Receives JPEG frames and decodes them onto the panel: in software on the
+ *   S3 boards, with the P4's JPEG decoder and pixel accelerator on the P4
  * - Sends touch down/move/up back, which the Pi injects into KIP
  * - WiFi, display id and server are set on a setup page the screen serves
  *   from its own WiFi network, and saved on the board
@@ -19,10 +21,21 @@
 #include <Preferences.h>
 #include <esp_mac.h>
 #include <lwip/sockets.h>
-#include <JPEGDEC.h>
 #include <esp_display_panel.hpp>
 #include "config.h"
 #include "fonts.h"
+
+#if CONFIG_IDF_TARGET_ESP32P4
+  #define KIPCAST_P4
+  #include <driver/jpeg_decode.h>
+  #include <driver/ppa.h>
+  #include <esp_cache.h>
+#else
+  #include <JPEGDEC.h>
+  #if KIPCAST_ROTATION != 0
+    #error "Only the P4 boards can rotate the picture"
+  #endif
+#endif
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -30,7 +43,9 @@ using namespace esp_panel::board;
 static Board  *board = nullptr;
 static LCD    *lcd   = nullptr;
 static Touch  *touch = nullptr;
+#ifndef KIPCAST_P4
 static JPEGDEC jpeg;
+#endif
 static WiFiClient server;  // not "link": clashes with POSIX link()
 
 static uint8_t *jpegBuf = nullptr;
@@ -52,11 +67,60 @@ static bool readTouch(int &x, int &y);
 /* Display helpers                                                     */
 /* ------------------------------------------------------------------ */
 
+#ifdef KIPCAST_P4
+/*
+ * The P4 decodes each JPEG in hardware into decodeBuf, then its pixel
+ * accelerator (PPA) copies the picture onto the panel's frame buffer, turned
+ * by KIPCAST_ROTATION, since the panel is portrait and KIP is shown landscape.
+ */
+static jpeg_decoder_handle_t jpegDec = nullptr;
+static ppa_client_handle_t ppa = nullptr;
+static uint16_t *decodeBuf = nullptr;
+static size_t decodeBufSize = 0;
+static uint16_t *panelFb = nullptr;
+static int panelW = 0, panelH = 0;
+
+static constexpr ppa_srm_rotation_angle_t PPA_ROTATION =
+    KIPCAST_ROTATION == 90  ? PPA_SRM_ROTATION_ANGLE_90 :
+    KIPCAST_ROTATION == 180 ? PPA_SRM_ROTATION_ANGLE_180 :
+    KIPCAST_ROTATION == 270 ? PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_0;
+static_assert(KIPCAST_ROTATION % 90 == 0 && KIPCAST_ROTATION >= 0 && KIPCAST_ROTATION < 360,
+              "KIPCAST_ROTATION must be 0, 90, 180 or 270");
+
+// Puts a w x h picture at the top left of the screen. Its rows are stride
+// pixels apart, in a buffer picH rows high.
+static void present(const uint16_t *pic, int stride, int picH, int w, int h) {
+  ppa_srm_oper_config_t op = {};
+  op.in.buffer = pic;
+  op.in.pic_w = stride;
+  op.in.pic_h = picH;
+  op.in.block_w = w;
+  op.in.block_h = h;
+  op.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+  op.out.buffer = panelFb;
+  op.out.buffer_size = panelW * panelH * 2;
+  op.out.pic_w = panelW;
+  op.out.pic_h = panelH;
+  op.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+  // Where the screen's top left corner is on the panel
+  switch (KIPCAST_ROTATION) {
+    case 90:  op.out.block_offset_y = SCREEN_W - w; break;
+    case 180: op.out.block_offset_x = SCREEN_W - w; op.out.block_offset_y = SCREEN_H - h; break;
+    case 270: op.out.block_offset_x = SCREEN_H - h; break;
+  }
+  op.rotation_angle = PPA_ROTATION;
+  op.scale_x = op.scale_y = 1;
+  op.mode = PPA_TRANS_MODE_BLOCKING;
+  esp_err_t err = ppa_do_scale_rotate_mirror(ppa, &op);
+  if (err != ESP_OK) Serial.printf("PPA: %s\n", esp_err_to_name(err));
+}
+#else
 // JPEGDEC hands us decoded blocks; push each straight to the panel.
 static int onJpegDraw(JPEGDRAW *d) {
   lcd->drawBitmap(d->x, d->y, d->iWidth, d->iHeight, (const uint8_t *)d->pPixels);
   return 1;
 }
+#endif
 
 // Status and setup screens are drawn into a buffer, then copied to the panel.
 static uint16_t *canvas = nullptr;
@@ -67,9 +131,15 @@ static const uint16_t COL_TEXT   = 0xFFFF;
 static const uint16_t COL_DIM    = 0xBDF7;
 
 static void pushCanvas() {
+#ifdef KIPCAST_P4
+  // The PPA reads memory, not the CPU cache the canvas was drawn in.
+  esp_cache_msync(canvas, SCREEN_W * SCREEN_H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  present(canvas, SCREEN_W, SCREEN_H, SCREEN_W, SCREEN_H);
+#else
   const int bandH = 40;
   for (int y = 0; y < SCREEN_H; y += bandH)
     lcd->drawBitmap(0, y, SCREEN_W, min(bandH, SCREEN_H - y), (const uint8_t *)(canvas + y * SCREEN_W));
+#endif
 }
 
 // Mixes two RGB565 colours; a is the weight of fg, 0-15.
@@ -229,7 +299,29 @@ static void initDisplay() {
   if (!board->begin()) { Serial.println("board begin failed"); while (true) delay(1000); }
   touch = board->getTouch();
   if (!touch) Serial.println("no touch controller: view-only mode");
-  canvas = (uint16_t *)heap_caps_malloc(SCREEN_W * SCREEN_H * 2, MALLOC_CAP_SPIRAM);
+#ifdef KIPCAST_P4
+  panelW = lcd->getFrameWidth();
+  panelH = lcd->getFrameHeight();
+  const bool turned = KIPCAST_ROTATION == 90 || KIPCAST_ROTATION == 270;
+  if (panelW != (turned ? SCREEN_H : SCREEN_W) || panelH != (turned ? SCREEN_W : SCREEN_H)) {
+    Serial.printf("panel is %dx%d, which doesn't fit SCREEN_W/H and KIPCAST_ROTATION\n", panelW, panelH);
+    while (true) delay(1000);
+  }
+  panelFb = (uint16_t *)lcd->getFrameBufferByIndex(0);
+  ppa_client_config_t ppaCfg = {};
+  ppaCfg.oper_type = PPA_OPERATION_SRM;
+  jpeg_decode_engine_cfg_t decCfg = {};
+  decCfg.timeout_ms = 200;
+  // The decoder pads pictures out to whole 16x16 blocks.
+  jpeg_decode_memory_alloc_cfg_t outMem = {JPEG_DEC_ALLOC_OUTPUT_BUFFER};
+  decodeBuf = (uint16_t *)jpeg_alloc_decoder_mem(((SCREEN_W + 15) & ~15) * ((SCREEN_H + 15) & ~15) * 2, &outMem, &decodeBufSize);
+  if (!panelFb || ppa_register_client(&ppaCfg, &ppa) != ESP_OK ||
+      jpeg_new_decoder_engine(&decCfg, &jpegDec) != ESP_OK || !decodeBuf) {
+    Serial.println("JPEG decoder / PPA setup failed");
+    while (true) delay(1000);
+  }
+#endif
+  canvas = (uint16_t *)heap_caps_aligned_alloc(128, SCREEN_W * SCREEN_H * 2, MALLOC_CAP_SPIRAM);
   if (!canvas) { Serial.println("canvas alloc failed"); while (true) delay(1000); }
   Serial.println("display ready");
 }
@@ -242,8 +334,13 @@ static bool readTouch(int &x, int &y) {
   TouchPoint pt;
   // Returns number of points read, or -1 on error. timeout 0 = don't wait for IRQ.
   if (touch->readPoints(&pt, 1, 0) <= 0) return false;
-  x = pt.x;
-  y = pt.y;
+  // Touch reports panel coordinates; turn them to match the picture.
+  switch (KIPCAST_ROTATION) {
+    case 90:  x = SCREEN_W - 1 - pt.y; y = pt.x; break;
+    case 180: x = SCREEN_W - 1 - pt.x; y = SCREEN_H - 1 - pt.y; break;
+    case 270: x = pt.y; y = SCREEN_H - 1 - pt.x; break;
+    default:  x = pt.x; y = pt.y;
+  }
   return true;
 }
 
@@ -445,6 +542,32 @@ static void checkLink() {
 
 static void showFrame(uint32_t len) {
   uint32_t t0 = millis();
+#ifdef KIPCAST_P4
+  // The decoder reads memory by DMA, so flush what the CPU wrote.
+  esp_cache_msync(jpegBuf, len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  jpeg_decode_picture_info_t info;
+  esp_err_t err = jpeg_decoder_get_info(jpegBuf, len, &info);
+  if (err == ESP_OK && (info.width > SCREEN_W || info.height > SCREEN_H)) err = ESP_ERR_INVALID_SIZE;
+  if (err == ESP_OK) {
+    jpeg_decode_cfg_t cfg = {};
+    cfg.output_format = JPEG_DECODE_OUT_FORMAT_RGB565;
+    cfg.rgb_order = JPEG_DEC_RGB_ELEMENT_ORDER_BGR;  // little-endian RGB565, as the panel takes it
+    cfg.conv_std = JPEG_YUV_RGB_CONV_STD_BT601;
+    uint32_t outSize;
+    err = jpeg_decoder_process(jpegDec, &cfg, jpegBuf, len, (uint8_t *)decodeBuf, decodeBufSize, &outSize);
+  }
+  if (err == ESP_OK) {
+    // Decoded rows are padded out to whole blocks: 16 pixels for chroma
+    // subsampled directions, 8 otherwise.
+    const bool sub = info.sample_method == JPEG_DOWN_SAMPLING_YUV420 || info.sample_method == JPEG_DOWN_SAMPLING_YUV422;
+    const int blockW = sub ? 16 : 8, blockH = info.sample_method == JPEG_DOWN_SAMPLING_YUV420 ? 16 : 8;
+    const int stride = (info.width + blockW - 1) / blockW * blockW;
+    const int rows = (info.height + blockH - 1) / blockH * blockH;
+    present(decodeBuf, stride, rows, info.width, info.height);
+  } else {
+    Serial.printf("bad JPEG (%s)\n", esp_err_to_name(err));
+  }
+#else
   if (jpeg.openRAM(jpegBuf, len, onJpegDraw)) {
     jpeg.setPixelType(RGB565_LITTLE_ENDIAN);
     jpeg.decode(0, 0, 0);
@@ -452,6 +575,7 @@ static void showFrame(uint32_t len) {
   } else {
     Serial.printf("bad JPEG (err %d)\n", jpeg.getLastError());
   }
+#endif
   static uint32_t n = 0;
   if ((++n % 50) == 0) Serial.printf("frame %lu: %lu bytes, decode %lu ms\n", n, len, millis() - t0);
 }
@@ -530,7 +654,11 @@ static bool validId(const String &id) {
 
 static String macSuffix() {
   uint8_t mac[6];
+#ifdef KIPCAST_P4
+  esp_read_mac(mac, ESP_MAC_BASE);  // the P4's own; its WiFi is on the C6
+#else
   esp_read_mac(mac, ESP_MAC_WIFI_STA);  // works before WiFi has started
+#endif
   char s[5];
   snprintf(s, sizeof s, "%02X%02X", mac[4], mac[5]);
   return s;
@@ -689,8 +817,15 @@ void setup() {
   while (!Serial && millis() < 3000) delay(10);
   delay(200);
   Serial.printf("KIPCast display starting, firmware %s\n", FW_VERSION);
+#ifdef KIPCAST_P4
+  // The JPEG decoder reads by DMA, so it allocates its own input buffer.
+  jpeg_decode_memory_alloc_cfg_t inMem = {JPEG_DEC_ALLOC_INPUT_BUFFER};
+  size_t jpegBufSize;
+  jpegBuf = (uint8_t *)jpeg_alloc_decoder_mem(MAX_JPEG_BYTES, &inMem, &jpegBufSize);
+#else
   jpegBuf = (uint8_t *)heap_caps_malloc(MAX_JPEG_BYTES, MALLOC_CAP_SPIRAM);
-  if (!jpegBuf) { Serial.println("PSRAM alloc failed: is OPI PSRAM enabled?"); while (true) delay(1000); }
+#endif
+  if (!jpegBuf) { Serial.println("PSRAM alloc failed: is PSRAM enabled?"); while (true) delay(1000); }
   initDisplay();
   loadSettings();
   loadLastServer();

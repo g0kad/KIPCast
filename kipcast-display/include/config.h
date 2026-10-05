@@ -42,8 +42,17 @@
   #define SCREEN_H     480
 #endif
 
+// How the picture is turned to fit the panel: 0, 90, 180 or 270 degrees
+// counter-clockwise. SCREEN_W x SCREEN_H is the picture's size, as KIP sees
+// it. Only the P4 boards can rotate (their panels are portrait).
+#ifndef KIPCAST_ROTATION
+  #define KIPCAST_ROTATION 0
+#endif
+
 // Largest JPEG we'll accept. 800x480 at quality 70 is typically 40-90 KB.
-#define MAX_JPEG_BYTES (256 * 1024)
+#ifndef MAX_JPEG_BYTES
+  #define MAX_JPEG_BYTES (256 * 1024)
+#endif
 
 // Touch tuning
 #define TOUCH_MOVE_MIN_MS   30   // don't send moves faster than this

@@ -57,11 +57,14 @@ jobs:
 
       # No secrets.h here: the images have no WiFi details or display id
       # built in, so each screen opens its setup page on first boot.
-      # The P4 builds (Waveshare 10.1", CrowPanel 10.1") are compiled to keep
-      # them working, but aren't released or offered in the installer until
-      # they have been tried on a board.
+      # The P4 builds (Waveshare 10.1" and 7B, CrowPanel 10.1") are compiled
+      # to keep them working, but aren't released or offered in the installer
+      # until they have been tried on a board.
       - name: Build
-        run: pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in -e kipcast-display-43in -e kipcast-display-p4-10in -e kipcast-display-crowpanel-10in
+        run: >-
+          pio run -d kipcast-display -e kipcast-display -e kipcast-display-4in -e kipcast-display-43in
+          -e kipcast-display-p4-10in -e kipcast-display-crowpanel-10in
+          -e kipcast-display-p4-7b -e kipcast-display-p4-7b-prev3
 
       - name: Assemble installer site
         run: |

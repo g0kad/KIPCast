@@ -1,8 +1,8 @@
 /*
- * KIPCast display firmware for Waveshare touch LCDs:
- * ESP32-S3-Touch-LCD-7 and -4.3 (800x480), ESP32-S3-Touch-LCD-4 Rev4 (480x480)
- * and ESP32-P4-WIFI6-Touch-LCD-10.1 (1280x800); Elecrow CrowPanel Advanced
- * 10.1" ESP32-P4 (1024x600)
+ * KIPCast display firmware for ESP32 touch LCDs:
+ * - Waveshare ESP32-S3-Touch-LCD-7 and -4.3 (800x480), -4 Rev4 (480x480)
+ * - Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1 (1280x800) and -7B (1024x600)
+ * - Elecrow CrowPanel Advanced 10.1" ESP32-P4 (1024x600)
  *
  * - Connects to the KIPCast server on the Pi over TCP
  * - Receives JPEG frames and decodes them onto the panel: in software on the

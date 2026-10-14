@@ -32,6 +32,7 @@
   #include <driver/ppa.h>
   #include <esp_cache.h>
   #include <esp_ldo_regulator.h>
+  #include <board/esp_panel_board_default_config.hpp>
 #else
   #include <JPEGDEC.h>
   #if KIPCAST_ROTATION != 0
@@ -61,6 +62,19 @@ static struct {
 } cfg;
 
 static Preferences prefs;
+
+// Messages go to both of the S3 boards' ports: Serial is the native USB port,
+// Serial0 the USB-UART one, which is where the boot and library messages go.
+#if ARDUINO_USB_CDC_ON_BOOT
+class LogPort : public Print {
+public:
+  size_t write(uint8_t c) override { Serial0.write(c); return Serial.write(c); }
+  size_t write(const uint8_t *buf, size_t n) override { Serial0.write(buf, n); return Serial.write(buf, n); }
+};
+static LogPort Log;
+#else
+#define Log Serial
+#endif
 
 static void runSetup();
 static bool readTouch(int &x, int &y);
@@ -114,7 +128,7 @@ static void present(const uint16_t *pic, int stride, int picH, int w, int h) {
   op.scale_x = op.scale_y = 1;
   op.mode = PPA_TRANS_MODE_BLOCKING;
   esp_err_t err = ppa_do_scale_rotate_mirror(ppa, &op);
-  if (err != ESP_OK) Serial.printf("PPA: %s\n", esp_err_to_name(err));
+  if (err != ESP_OK) Log.printf("PPA: %s\n", esp_err_to_name(err));
 }
 #else
 // JPEGDEC hands us decoded blocks; push each straight to the panel.
@@ -219,6 +233,10 @@ static void showScreen(uint16_t bg, const String &heading, std::initializer_list
     if (l.length()) y = drawText(y, l, FONT_BODY, COL_TEXT) + 10;
   if (footer.length()) drawText(SCREEN_H - 20 - FONT_SMALL.lineHeight, footer, FONT_SMALL, COL_DIM);
   pushCanvas();
+  String shown = heading;
+  for (const String &l : lines)
+    if (l.length()) shown += " | " + l;
+  Log.printf("screen: %s\n", shown.c_str());
 }
 
 static void showStatus(uint16_t bg, const String &status, const String &detail = "") {
@@ -282,7 +300,33 @@ static void ch32PowerOn() {
   delay(200);
   pinMode(CH32_SDA, INPUT);
   pinMode(CH32_SCL, INPUT);
-  Serial.println(ok ? "CH32 IO expander: panel powered" : "CH32 IO expander: no ACK at 0x24");
+  Log.println(ok ? "CH32 IO expander: panel powered" : "CH32 IO expander: no ACK at 0x24");
+}
+#endif
+
+#if defined(KIPCAST_P4) && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+  #define KIPCAST_P4_REV3
+/*
+ * ESP32_Display_Panel (up to 1.0.4 at least) clocks the MIPI-DSI PHY from
+ * PLL_F20M, which only pre-rev-3 P4s have: on a rev 3 chip IDF aborts in
+ * esp_lcd_new_dsi_bus(). Spell out the host config with the rev 3 default
+ * (the crystal) so the library doesn't fill in its own. A Board built from
+ * a config makes its drivers by name, so platformio.ini enables the LCD and
+ * touch drivers for these builds.
+ */
+static BoardConfig boardConfig() {
+  BoardConfig cfg = ESP_PANEL_BOARD_DEFAULT_CONFIG;
+  auto *dsi = cfg.lcd ? std::get_if<BusDSI::Config>(&cfg.lcd->bus_config) : nullptr;
+  auto *host = dsi ? std::get_if<BusDSI::HostPartialConfig>(&dsi->host) : nullptr;
+  if (host) {
+    dsi->host = BusDSI::HostFullConfig{
+      .bus_id = BusDSI::HOST_ID_DEFAULT,
+      .num_data_lanes = static_cast<uint8_t>(host->num_data_lanes),
+      .phy_clk_src = MIPI_DSI_PHY_PLLREF_CLK_SRC_DEFAULT,
+      .lane_bit_rate_mbps = static_cast<uint32_t>(host->lane_bit_rate_mbps),
+    };
+  }
+  return cfg;
 }
 #endif
 
@@ -297,25 +341,29 @@ static void initDisplay() {
   ldo4Cfg.chan_id = 4;
   ldo4Cfg.voltage_mv = 3300;
   esp_err_t ldoErr = esp_ldo_acquire_channel(&ldo4Cfg, &ldo4);
-  if (ldoErr != ESP_OK) Serial.printf("LDO4: %s\n", esp_err_to_name(ldoErr));
+  if (ldoErr != ESP_OK) Log.printf("LDO4: %s\n", esp_err_to_name(ldoErr));
 #endif
+#ifdef KIPCAST_P4_REV3
+  board = new Board(boardConfig());
+#else
   board = new Board();
-  if (!board->init()) { Serial.println("board init failed"); while (true) delay(1000); }
+#endif
+  if (!board->init()) { Log.println("board init failed"); while (true) delay(1000); }
   lcd = board->getLCD();
   // Bounce buffer keeps the RGB panel stable while WiFi hammers PSRAM.
   auto *bus = lcd->getBus();
   if (bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB) {
     static_cast<BusRGB *>(bus)->configRGB_BounceBufferSize(lcd->getFrameWidth() * 20);
   }
-  if (!board->begin()) { Serial.println("board begin failed"); while (true) delay(1000); }
+  if (!board->begin()) { Log.println("board begin failed"); while (true) delay(1000); }
   touch = board->getTouch();
-  if (!touch) Serial.println("no touch controller: view-only mode");
+  if (!touch) Log.println("no touch controller: view-only mode");
 #ifdef KIPCAST_P4
   panelW = lcd->getFrameWidth();
   panelH = lcd->getFrameHeight();
   const bool turned = KIPCAST_ROTATION == 90 || KIPCAST_ROTATION == 270;
   if (panelW != (turned ? SCREEN_H : SCREEN_W) || panelH != (turned ? SCREEN_W : SCREEN_H)) {
-    Serial.printf("panel is %dx%d, which doesn't fit SCREEN_W/H and KIPCAST_ROTATION\n", panelW, panelH);
+    Log.printf("panel is %dx%d, which doesn't fit SCREEN_W/H and KIPCAST_ROTATION\n", panelW, panelH);
     while (true) delay(1000);
   }
   panelFb = (uint16_t *)lcd->getFrameBufferByIndex(0);
@@ -328,13 +376,13 @@ static void initDisplay() {
   decodeBuf = (uint16_t *)jpeg_alloc_decoder_mem(((SCREEN_W + 15) & ~15) * ((SCREEN_H + 15) & ~15) * 2, &outMem, &decodeBufSize);
   if (!panelFb || ppa_register_client(&ppaCfg, &ppa) != ESP_OK ||
       jpeg_new_decoder_engine(&decCfg, &jpegDec) != ESP_OK || !decodeBuf) {
-    Serial.println("JPEG decoder / PPA setup failed");
+    Log.println("JPEG decoder / PPA setup failed");
     while (true) delay(1000);
   }
 #endif
   canvas = (uint16_t *)heap_caps_aligned_alloc(128, SCREEN_W * SCREEN_H * 2, MALLOC_CAP_SPIRAM);
-  if (!canvas) { Serial.println("canvas alloc failed"); while (true) delay(1000); }
-  Serial.println("display ready");
+  if (!canvas) { Log.println("canvas alloc failed"); while (true) delay(1000); }
+  Log.println("display ready");
 }
 
 /* ------------------------------------------------------------------ */
@@ -396,7 +444,7 @@ static String hostName() {
 static void ensureWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
   showStatus(COL_WIFI, "Joining WiFi", cfg.ssid);
-  Serial.printf("WiFi: joining %s\n", cfg.ssid.c_str());
+  Log.printf("WiFi: joining %s\n", cfg.ssid.c_str());
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // power save adds big latency to every frame
   WiFi.setHostname(hostName().c_str());
@@ -411,13 +459,13 @@ static void ensureWifi() {
       warned = true;
     }
     if (millis() - lastBegin > 30000) {  // start over every 30 s
-      Serial.printf("WiFi: still joining (status %d)\n", WiFi.status());
+      Log.printf("WiFi: still joining (status %d)\n", WiFi.status());
       WiFi.disconnect();
       WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
       lastBegin = millis();
     }
   }
-  Serial.printf("WiFi: %s\n", WiFi.localIP().toString().c_str());
+  Log.printf("WiFi: %s\n", WiFi.localIP().toString().c_str());
   MDNS.end();
   MDNS.begin(hostName().c_str());
 }
@@ -516,7 +564,7 @@ static void ensureLink() {
       found = true;  // we know where it was; it just isn't answering yet
       where = lastIp.toString();
     }
-    Serial.printf("KIPCast: %s %s, retrying\n", where.c_str(), found ? "not answering" : "not found");
+    Log.printf("KIPCast: %s %s, retrying\n", where.c_str(), found ? "not answering" : "not found");
     if (tries == 3) {
       if (!found)
         showStatus(COL_SERVER, "Can't find " + where,
@@ -533,7 +581,7 @@ static void ensureLink() {
   char hello[96];
   snprintf(hello, sizeof hello, "H %s %d %d %s", cfg.id.c_str(), SCREEN_W, SCREEN_H, FW_VERSION);
   sendLine(hello);
-  Serial.println("KIPCast: connected");
+  Log.println("KIPCast: connected");
 }
 
 // WiFiClient::connected() misses the Pi closing the connection (as it does
@@ -546,7 +594,7 @@ static void checkLink() {
   uint8_t b;
   int n = recv(server.fd(), &b, 1, MSG_PEEK | MSG_DONTWAIT);
   if (n == 0 || (n < 0 && errno != EWOULDBLOCK && errno != EAGAIN) || WiFi.status() != WL_CONNECTED) {
-    Serial.println("KIPCast: connection closed");
+    Log.println("KIPCast: connection closed");
     server.stop();
   }
 }
@@ -576,7 +624,7 @@ static void showFrame(uint32_t len) {
     const int rows = (info.height + blockH - 1) / blockH * blockH;
     present(decodeBuf, stride, rows, info.width, info.height);
   } else {
-    Serial.printf("bad JPEG (%s)\n", esp_err_to_name(err));
+    Log.printf("bad JPEG (%s)\n", esp_err_to_name(err));
   }
 #else
   if (jpeg.openRAM(jpegBuf, len, onJpegDraw)) {
@@ -584,11 +632,11 @@ static void showFrame(uint32_t len) {
     jpeg.decode(0, 0, 0);
     jpeg.close();
   } else {
-    Serial.printf("bad JPEG (err %d)\n", jpeg.getLastError());
+    Log.printf("bad JPEG (err %d)\n", jpeg.getLastError());
   }
 #endif
   static uint32_t n = 0;
-  if ((++n % 50) == 0) Serial.printf("frame %lu: %lu bytes, decode %lu ms\n", n, len, millis() - t0);
+  if ((++n % 50) == 0) Log.printf("frame %lu: %lu bytes, decode %lu ms\n", n, len, millis() - t0);
 }
 
 // Non-blocking receive so touch keeps being polled mid-frame.
@@ -598,10 +646,10 @@ static void pumpNetwork() {
     if (rxState == RX_HEADER) {
       rxHdrGot += server.read(rxHdr + rxHdrGot, sizeof rxHdr - rxHdrGot);
       if (rxHdrGot < sizeof rxHdr) continue;
-      if (memcmp(rxHdr, "KCF", 3) != 0) { Serial.println("stream out of sync, reconnecting"); server.stop(); return; }
+      if (memcmp(rxHdr, "KCF", 3) != 0) { Log.println("stream out of sync, reconnecting"); server.stop(); return; }
       rxLen = ((uint32_t)rxHdr[3] << 24) | ((uint32_t)rxHdr[4] << 16) | ((uint32_t)rxHdr[5] << 8) | rxHdr[6];
       rxSkip = rxLen > MAX_JPEG_BYTES;
-      if (rxSkip) Serial.printf("frame too big (%lu), skipping\n", rxLen);
+      if (rxSkip) Log.printf("frame too big (%lu), skipping\n", rxLen);
       rxGot = 0; rxHdrGot = 0; rxState = RX_BODY;
     } else {
       uint32_t want = rxLen - rxGot;
@@ -751,7 +799,7 @@ static void handleSave() {
   prefs.remove("lastip");  // the server may have changed
   prefs.remove("lastname");
   prefs.end();
-  Serial.printf("setup: saved (WiFi %s, id %s, server %s)\n", ssid.c_str(), id.c_str(), host.length() ? host.c_str() : "auto");
+  Log.printf("setup: saved (WiFi %s, id %s, server %s)\n", ssid.c_str(), id.c_str(), host.length() ? host.c_str() : "auto");
   String p = FPSTR(PAGE_HEAD);
   p += "<h1>Saved</h1><p>The screen is restarting and will join <b>" + htmlEscape(ssid) +
        "</b>. You can reconnect this phone to your usual WiFi.</p></main></body></html>";
@@ -788,7 +836,7 @@ static void runSetup() {
     web->send(302, "text/plain", "");
   });
   web->begin();
-  Serial.printf("setup: WiFi %s, page at http://%s/\n", ap.c_str(), apIp.toString().c_str());
+  Log.printf("setup: WiFi %s, page at http://%s/\n", ap.c_str(), apIp.toString().c_str());
 
   bool configured = cfg.ssid.length() > 0;
   showScreen(COL_SETUP, "KIPCast setup", {
@@ -823,11 +871,14 @@ static void runSetup() {
 
 void setup() {
   Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT
+  Serial0.begin(115200);
+#endif
   // Give the PC a moment to reopen the USB serial port after a reset, or the
   // startup messages are lost.
   while (!Serial && millis() < 3000) delay(10);
   delay(200);
-  Serial.printf("KIPCast display starting, firmware %s\n", FW_VERSION);
+  Log.printf("KIPCast display starting, firmware %s\n", FW_VERSION);
 #ifdef KIPCAST_BOARD_CROWPANEL_10IN
   // Its ESP32-C6 is wired differently from Espressif's reference board:
   // data lines reversed, reset on GPIO32 (clk, cmd, d0-d3, reset).
@@ -841,11 +892,11 @@ void setup() {
 #else
   jpegBuf = (uint8_t *)heap_caps_malloc(MAX_JPEG_BYTES, MALLOC_CAP_SPIRAM);
 #endif
-  if (!jpegBuf) { Serial.println("PSRAM alloc failed: is PSRAM enabled?"); while (true) delay(1000); }
+  if (!jpegBuf) { Log.println("PSRAM alloc failed: is PSRAM enabled?"); while (true) delay(1000); }
   initDisplay();
   loadSettings();
   loadLastServer();
-  Serial.printf("display id %s, server %s\n", cfg.id.c_str(), cfg.host.length() ? cfg.host.c_str() : "auto");
+  Log.printf("display id %s, server %s\n", cfg.id.c_str(), cfg.host.length() ? cfg.host.c_str() : "auto");
   if (cfg.ssid.isEmpty()) runSetup();
   // A moment to touch and hold for setup before anything else happens.
   showStatus(COL_WIFI, "Starting");

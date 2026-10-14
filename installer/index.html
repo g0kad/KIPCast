@@ -45,7 +45,7 @@
 <body>
 <main>
   <h1>KIPCast display installer</h1>
-  <p class="lede">Install the KIPCast firmware on a Waveshare ESP32-S3 touchscreen, straight from this page.
+  <p class="lede">Install the KIPCast firmware on a Waveshare ESP32 touchscreen, straight from this page.
     You need Chrome or Edge on a computer, and a USB-C data cable.
     <a href="https://github.com/g0kad/KIPCast#readme">What is KIPCast?</a></p>
 
@@ -76,8 +76,17 @@
           <span slot="not-allowed" class="unsupported">Open this page over HTTPS to install.</span>
         </esp-web-install-button>
       </div>
+      <div class="board">
+        <h3>Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1</h3>
+        <p>10.1", shown landscape at 1280×800. Plug into the USB-C port marked <b>UART</b>.</p>
+        <esp-web-install-button manifest="manifest-p4-10in.json">
+          <span slot="unsupported" class="unsupported">This browser can't install firmware. Use Chrome or Edge on a computer.</span>
+          <span slot="not-allowed" class="unsupported">Open this page over HTTPS to install.</span>
+        </esp-web-install-button>
+      </div>
     </div>
-    <p class="small">Click <b>Connect</b>, choose the screen's port (usually "USB JTAG/serial debug unit"), then <b>Install</b>.
+    <p class="small">Click <b>Connect</b>, choose the screen's port (usually "USB JTAG/serial debug unit"; on the 10.1",
+      a "CH343" serial port), then <b>Install</b>.
       When updating a screen that's already set up, leave <b>Erase device</b> unticked to keep its settings.</p>
   </section>
 
@@ -101,6 +110,10 @@
         If it still doesn't appear, hold the <b>BOOT</b> button while plugging the cable in.</li>
       <li><b>The 7" or 4.3" screen stays blank after installing:</b> unplug it and plug it back in. One of its display lines shares a pin
         that can leave it in download mode after a reset.</li>
+      <li><b>The 10.1" port has a warning in Windows Device Manager:</b> another program may already use its COM number.
+        Open the port's <b>Properties → Port Settings → Advanced</b>, pick an unused COM number and plug the screen in again.</li>
+      <li><b>The 10.1" is slow or drops off the WiFi:</b> its WiFi chip may still have old firmware.
+        See <a href="https://github.com/g0kad/KIPCast#waveshare-esp32-p4-101">updating it</a>.</li>
       <li><b>The screen can't find Signal K:</b> check the KIPCast plugin is installed and enabled in Signal K.
         Or open setup and enter the Pi's IP address as the Signal K server.</li>
     </ol>

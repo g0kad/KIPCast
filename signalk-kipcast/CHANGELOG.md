@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 (2026-10-15)
+
+- Display firmware 0.3.3 adds the Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1, shown landscape at 1280×800, to the [web installer](https://g0kad.github.io/KIPCast/). It decodes frames in hardware, so it keeps up easily. **Add a display** offers its size.
+- If the 10.1"'s WiFi is slow, its WiFi chip may have old firmware: the [README](https://github.com/g0kad/KIPCast#waveshare-esp32-p4-101) shows how to update it.
+- The firmware now also writes its log to the USB-UART port of the 7" and 4.3", and names each status screen it shows. This helps when reporting a problem. Nothing else has changed for the S3 screens, so updating them is optional.
+
 ## 0.3.2 (2026-10-04)
 
 - Set a display's KIP login from **Webapps → KIPCast**: click **KIP login**, enter the Signal K user and password, and the display's KIP logs in as that user and loads its dashboards. No more typing it on the touchscreen or in the viewer. The login is checked with Signal K before it's saved, and the screen doesn't need to be connected.

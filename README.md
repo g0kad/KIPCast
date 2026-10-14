@@ -10,10 +10,10 @@ Put live [KIP](https://github.com/mxtommy/Kip) dashboards on cheap ESP32 touchsc
 
 <sub>KIP dashboards on the 4" 480×480 screen.</sub>
 
-A Signal K plugin on the Raspberry Pi runs KIP in headless Chromium and streams it as JPEG frames over WiFi to Waveshare ESP32-S3 touchscreens: the 7" and 4.3" (800×480) and the 4" (480×480). Screens of both sizes can be used at once. Touches on the screen are sent back and injected into KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
+A Signal K plugin on the Raspberry Pi runs KIP in headless Chromium and streams it as JPEG frames over WiFi to Waveshare touchscreens: the ESP32-S3 7" and 4.3" (800×480) and 4" (480×480), and the ESP32-P4 10.1" (1280×800). Screens of different sizes can be used at once. Touches on the screen are sent back and injected into KIP as real touch events, so tapping, swiping between dashboards and KIP's menus all work as they do on a tablet.
 
 ```
- Raspberry Pi (Signal K)                          ESP32-S3 display
+ Raspberry Pi (Signal K)                          ESP32 display
  ┌─────────────────────────────────┐   JPEG     ┌────────────────────┐
  │ signalk-kipcast                 │  frames    │ kipcast-display    │
  │  headless Chromium              │ ─────────▶ │  JPEGDEC → RGB LCD │
@@ -26,14 +26,14 @@ A Signal K plugin on the Raspberry Pi runs KIP in headless Chromium and streams 
 
 Each display has an id (for example `saloon` or `helm`). Each id gets its own KIP, drawn at that screen's size, with its own login and settings, so swiping to another dashboard on one screen doesn't change the others. Two displays with the same id show the same thing.
 
-> **Status:** tested on a Pi 5 running Signal K with KIP 4.8, with a Waveshare 7" and a 4" Rev4 connected at the same time.
+> **Status:** tested on a Pi 5 running Signal K with KIP 4.8, with a Waveshare 7", a 4" Rev4 and a 10.1" ESP32-P4 connected at the same time.
 
 ## Repository layout
 
 | Folder | What it is |
 |---|---|
 | [`signalk-kipcast/`](signalk-kipcast/) | Signal K plugin (Node.js). Also runs on its own with `node standalone.js`. |
-| [`kipcast-display/`](kipcast-display/) | PlatformIO firmware for the Waveshare ESP32-S3-Touch-LCD-7, -4.3 and -4. |
+| [`kipcast-display/`](kipcast-display/) | PlatformIO firmware for the Waveshare ESP32-S3-Touch-LCD-7, -4.3 and -4, and the ESP32-P4-WIFI6-Touch-LCD-10.1. |
 
 ## Quick start
 
@@ -73,7 +73,7 @@ In the Signal K admin UI, open **Webapps → KIPCast**. It lists every display t
 
 **Open** takes you to the browser viewer for that display at its own size, which is where you set up its KIP. **Forget** removes a display from the list. Its KIP login and dashboards are kept, and a screen with that id adds itself back when it next connects.
 
-Screens add themselves the first time they connect. To set up a display before its screen exists, use **Add a display**: enter the id you'll give the screen and pick its size (7" or 4.3" 800×480, 4" 480×480, or custom).
+Screens add themselves the first time they connect. To set up a display before its screen exists, use **Add a display**: enter the id you'll give the screen and pick its size (7" or 4.3" 800×480, 4" 480×480, 10.1" 1280×800, or custom).
 
 The page and its changes need a Signal K login. The plugin status in **Server → Plugin Config** also lists the connected screens and their sizes, for example `Connected: helm 480×480, shedtest 800×480`.
 
@@ -185,9 +185,10 @@ Supported boards, each with its own PlatformIO environment:
 |---|---|---|---|
 | [Waveshare ESP32-S3-Touch-LCD-7](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-7) | `kipcast-display` (default) | 800×480 ST7262 | CH422G I/O expander |
 | [Waveshare ESP32-S3-Touch-LCD-4](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4), Rev4.0 | `kipcast-display-4in` | 480×480 ST7701 | CH32V003 I/O expander. Earlier revisions use a TCA9554 and aren't supported yet. |
+| [Waveshare ESP32-P4-WIFI6-Touch-LCD-10.1](https://docs.waveshare.com/ESP32-P4-WIFI6-Touch-LCD-X) | `kipcast-display-p4-10in` | 800×1280 JD9365 MIPI-DSI, shown landscape at 1280×800 | ESP32-P4 (rev 3) with an ESP32-C6 for WiFi. Decodes JPEG in hardware. See the notes below. |
 | [Waveshare ESP32-S3-Touch-LCD-4.3](https://docs.waveshare.com/ESP32-S3-Touch-LCD-4.3), including the 4.3B | `kipcast-display-43in` | 800×480 ST7262 | Same hardware as the 7", so it uses the 7" config. Not yet tested on a real board. |
 
-All have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
+All have 16 MB flash, PSRAM and GT911 touch. The S3 boards have 8 MB PSRAM.
 
 1. Install [PlatformIO](https://platformio.org/). The project uses the community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform, because ESP32_Display_Panel v1.x needs Arduino core 3.x and the official platform is still on 2.x. PlatformIO downloads it automatically.
 2. Optionally, build your details in so a freshly flashed screen skips the setup page:
@@ -196,12 +197,13 @@ All have an ESP32-S3 with 16 MB flash, 8 MB PSRAM and GT911 touch.
    cp secrets.example.h secrets.h          # secrets.h is ignored by git
    ```
    Edit `secrets.h` and fill in your SSID, password and `DISPLAY_ID` (a different id for each screen), and `KIPCAST_HOST` if the screen shouldn't find the Pi by itself. If you build for both boards, `secrets.example.h` shows how to give each its own id. Anything saved on the setup page takes priority; `pio run -t erase` clears it.
-3. Build and flash over the ESP32's native USB. On the 7" and 4.3" that's the USB-C port marked **USB**; the 4" has only one USB-C port.
+3. Build and flash over the ESP32's native USB. On the 7" and 4.3" that's the USB-C port marked **USB**; the 4" has only one USB-C port. The 10.1" uses its USB-C port marked **UART**, and must be built from PowerShell or cmd on Windows: its RISC-V toolchain won't install from Git Bash.
    ```bash
    cd kipcast-display
    pio run -e kipcast-display -t upload        # 7"
    pio run -e kipcast-display-4in -t upload    # 4"
    pio run -e kipcast-display-43in -t upload   # 4.3"
+   pio run -e kipcast-display-p4-10in -t upload  # 10.1" ESP32-P4
    pio device monitor
    ```
    Each build also writes `firmware.factory.bin`, the single image that the web installer uses.
@@ -213,6 +215,12 @@ Each board's panel config is in `include/boards/<board>/esp_panel_board_custom_c
 **7" and 4.3" quirks:**
 - If the USB port disappears (for example after running Waveshare's demo, which switches those pins to CAN), hold **BOOT** while plugging the cable in.
 - One of the LCD data lines shares a pin with the ESP32's boot-mode pin, so after a reset or a flash the board can start in download mode with a blank screen. Unplug it and plug it back in.
+
+#### Waveshare ESP32-P4 10.1"
+
+- **WiFi chip firmware.** WiFi goes through an ESP32-C6 running Espressif's ESP-Hosted. Boards can arrive with C6 firmware older than ESP-Hosted 2.6, while KIPCast is built against 2.12.11. The log then shows `Response not received for [0x15e](Req_GetCoprocessorFwVersion)` at every boot. To update the C6 over WiFi, set the screen up with KIPCast first, then run `pio run -d kipcast-display/tools/c6-update -t upload -t monitor`. It joins the WiFi KIPCast saved, downloads the matching C6 firmware from Espressif and installs it in about 30 seconds. Then install KIPCast again.
+- **Rev 3 chips only.** The build is for rev 3 ESP32-P4s (`esptool chip-id` shows the revision). ESP32_Display_Panel picks a display clock that only older chips have, so the firmware sets the rev 3 one itself (`boardConfig()` in `main.cpp`, with `include/boards/p4-drivers`).
+- **COM port warning on Windows.** If the board's CH343 serial port shows a warning in Device Manager (code 31), another program, such as a radio's virtual serial ports, may already use its COM number. Give the port an unused number under **Properties → Port Settings → Advanced**.
 
 ### What the screen shows while connecting
 

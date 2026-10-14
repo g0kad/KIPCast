@@ -1,0 +1,11 @@
+{
+  "name": "KIPCast display (Waveshare ESP32-P4 10.1\" 1280x800)",
+  "version": "dev",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "parts": [{ "path": "kipcast-display-p4-10in.bin", "offset": 0 }]
+    }
+  ]
+}

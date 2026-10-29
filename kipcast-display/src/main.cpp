@@ -15,6 +15,8 @@
  * live in include/boards/<board>/esp_panel_board_custom_conf.h.
  */
 #include <Arduino.h>
+#include <algorithm>
+#include <vector>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WebServer.h>
@@ -756,11 +758,17 @@ static const char PAGE_HEAD[] PROGMEM = R"(<!doctype html><html lang="en"><head>
 main{max-width:420px;margin:0 auto;padding:16px}h1{font-size:22px}label{display:block;margin:16px 0 4px}
 input{box-sizing:border-box;width:100%;font:inherit;padding:8px;border-radius:6px;border:1px solid #2d3640;background:#0e1216;color:#d7dee6}
 small{color:#7d8a97}button{margin-top:24px;width:100%;font:inherit;padding:10px;border-radius:6px;border:0;background:#2f6a92;color:#fff}
-.err{color:#e06c5f}</style></head><body><main>)";
+.err{color:#e06c5f}
+.nets{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.nets button{margin:0;display:flex;justify-content:space-between;text-align:left;background:#0e1216;color:#d7dee6;border:1px solid #2d3640}
+.nets button.sel{border-color:#2f6a92;background:#173247}.nets small{margin-left:12px;white-space:nowrap}</style>
+<script>function pick(b){ssid.value=b.firstChild.textContent;mark();pass.focus()}
+function mark(){for(const b of document.querySelectorAll('.nets button'))b.classList.toggle('sel',b.firstChild.textContent==ssid.value)}</script>
+</head><body><main>)";
 
 static WebServer *web = nullptr;
 static DNSServer *dns = nullptr;
-static String networks;  // <option>s for the WiFi network list
+static String networks;  // a button for each network the screen can see
 static bool saved = false;
 
 static void sendForm(const String &error = "") {
@@ -770,8 +778,11 @@ static void sendForm(const String &error = "") {
   if (error.length()) p += "<p class=err>" + htmlEscape(error) + "</p>";
   p += "<form method=post action=/save>";
   p += "<label for=ssid>WiFi network</label>";
-  p += "<input id=ssid name=ssid list=nets required autocomplete=off value=\"" + htmlEscape(cfg.ssid) + "\">";
-  p += "<datalist id=nets>" + networks + "</datalist>";
+  if (networks.length()) p += "<div class=nets>" + networks + "</div>";
+  p += "<input id=ssid name=ssid required autocomplete=off autocapitalize=none oninput=mark() value=\"" + htmlEscape(cfg.ssid) + "\">";
+  p += networks.length() ? "<small>Tap a network above, or type its name if it's hidden.</small>"
+                         : "<small>The screen didn't find any networks. Type the name of the boat's WiFi.</small>";
+  p += "<script>mark()</script>";
   p += "<label for=pass>WiFi password</label><input id=pass name=pass type=password autocomplete=off";
   p += cfg.pass.length() ? " placeholder=\"Unchanged\">" : ">";
   p += "<label for=id>Display id</label>";
@@ -816,10 +827,20 @@ static void runSetup() {
   WiFi.mode(WIFI_AP_STA);
   String ap = "KIPCast-" + macSuffix();
 
+  // Strongest first, each name once (a boat may have several access points)
   int n = WiFi.scanNetworks();
-  for (int i = 0; i < n; i++) {
-    String opt = "<option value=\"" + htmlEscape(WiFi.SSID(i)) + "\">";
-    if (WiFi.SSID(i).length() && networks.indexOf(opt) < 0) networks += opt;
+  std::vector<int> order;
+  for (int i = 0; i < n; i++) order.push_back(i);
+  std::sort(order.begin(), order.end(), [](int a, int b) { return WiFi.RSSI(a) > WiFi.RSSI(b); });
+  std::vector<String> seen;
+  for (int i : order) {
+    String name = WiFi.SSID(i);
+    if (name.isEmpty() || std::find(seen.begin(), seen.end(), name) != seen.end()) continue;
+    seen.push_back(name);
+    int rssi = WiFi.RSSI(i);
+    String detail = rssi > -60 ? "Strong" : rssi > -75 ? "Good" : "Weak";
+    if (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) detail += ", open";
+    networks += "<button type=button onclick=pick(this)>" + htmlEscape(name) + "<small>" + detail + "</small></button>";
   }
   WiFi.scanDelete();
 

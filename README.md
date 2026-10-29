@@ -169,7 +169,7 @@ The firmware has no WiFi details built in. The first time it starts, the screen 
 
 | Setting | Notes |
 |---|---|
-| WiFi network and password | The boat's WiFi. The page lists the networks the screen can see. |
+| WiFi network and password | The boat's WiFi. The page lists the networks the screen can see, strongest first: tap one to choose it, or type the name of a hidden network. |
 | Display id | Letters, digits, `-` and `_`. Each id gets its own KIP on the Pi, and screens with the same id show the same thing. |
 | Signal K server | Leave blank to find the Signal K server on the network (it announces itself over mDNS). Or enter the Pi's IP address or name. The screen remembers the address of the last server it connected to and tries that first, so it reconnects quickly and doesn't depend on Signal K's announcements, which can stop after the Pi's network drops. |
 
